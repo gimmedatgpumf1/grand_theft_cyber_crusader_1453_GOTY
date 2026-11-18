@@ -381,6 +381,11 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     restingOnBall_ = false;
     restingBall_ = kThrowBall;
     dragBall_ = kThrowBall;
+    // The debug history belongs to the room that was just thrown away: stepping
+    // back across a reset would restore a state from a different room.
+    debugHistory_.clear();
+    tickLog_.clear();
+    tickCount_ = 0;
     return true;
 }
 

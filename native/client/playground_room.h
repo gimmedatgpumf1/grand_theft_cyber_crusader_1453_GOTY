@@ -10,6 +10,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace gtc::native {
 class RoomFreecam;
@@ -66,6 +68,23 @@ public:
     // Hands the frame's elapsed time to the fixed 20 Hz tick accumulator. No
     // tick is ever split and no tick is ever run twice.
     void advance(double seconds);
+    // Debug stepping, for the D / . / , keys: run exactly one tick, or go back
+    // one tick to the state the room was in before it. Going back restores a
+    // full snapshot -- every body, ball, rope, the point, the ledger -- so the
+    // room is exactly where it was, not approximately. The history is kept for
+    // the last 600 ticks (30 seconds at 20 Hz) and cleared by reset().
+    void stepOnce();
+    bool stepBack();
+    // After a pause the accumulator is left at a whole tick so the picture
+    // shows the tick's end state; resuming must not spend that tick again.
+    void resumeFromPause() { accumulator_ = 0; }
+    std::uint64_t tickCount() const { return tickCount_; }
+    std::size_t debugHistoryDepth() const { return debugHistory_.size(); }
+    // What the tick that produced the current state did, line by line: the
+    // energy before and after, every body's and ball's speed and spin, every
+    // contact patch, every force and impulse in the ledger. This is what the
+    // / key shows.
+    const std::vector<std::string>& tickLog() const { return tickLog_; }
     void setDragRay(Vec3 origin, Vec3 direction);
     void beginDrag();
     // Release a carried ball at its placed position, without adding a throw.
@@ -749,5 +768,57 @@ private:
     // they are counted -- a number that only ever goes up in a room where something
     // is still being missed is how the thing being missed gets found.
     std::size_t bodyStepClamped_ = 0;
+
+    // --- debug stepping: snapshots and the per-tick log ------------------------
+    //
+    // One tick of the room, whole. Everything that a tick reads or writes is
+    // here, so restoring one puts the room back exactly where it was: the
+    // bodies, the balls, the ropes, the point, the force ledger, the recorded
+    // impulses, the patches, the drag, and the counters. The GPU scene handles
+    // inside the bodies and balls are part of the copy, which is harmless --
+    // the scene is not rebuilt by a restore, and the handles do not change.
+    struct DebugSnapshot {
+        std::array<Body, kBodyCount> bodies{};
+        std::array<Ball, kBallCount> balls{};
+        Rope rope{};
+        std::array<Rope, kRopeCount - 1> extraRopes{};
+        Vec3 point{}, previous{}, shown{}, velocity{}, pointForce{};
+        Vec3 traceFrom{}, traceTo{};
+        std::array<Vec3, 40> ghosts{};
+        std::size_t ghostCount = 0, ghostNext = 0;
+        std::array<ForceSample, kMaxForceSamples> forces{};
+        std::size_t forceCount = 0;
+        std::array<RecordedImpulse, kMaxRecordedImpulses> impulses{};
+        std::size_t impulseCount = 0;
+        ManifoldSet tickPatches{};
+        double accumulator = 0.0;
+        DragTarget dragTarget = DragTarget::None;
+        std::size_t dragBall = kThrowBall, dragBody = kBodyCount;
+        Vec3 handSpeed{}, planeGrab{}, grabOffset{};
+        std::array<float, 4> dragOrigin{}, dragDirection{};
+        double slideSpan = 0.0;
+        Vec3 supportNormal{0, 1, 0}, pointArrival{};
+        bool heldStill = false, resting = false, pointFrozen = false;
+        int restingBody = -1;
+        bool restingOnBall = false;
+        std::size_t restingBall = kThrowBall;
+        std::size_t bodyStepClamped = 0;
+        std::uint64_t tickCount = 0;
+    };
+    // One history entry: the state at the start of a tick, and the log of the
+    // tick that ran from it. Stepping back restores the state and shows the
+    // log of the tick that produced it -- the new top entry's log.
+    struct DebugHistoryEntry {
+        DebugSnapshot snapshot;
+        std::vector<std::string> log;
+    };
+    static constexpr std::size_t kDebugHistoryCapacity = 600;  // 30 s at 20 Hz
+    std::vector<DebugHistoryEntry> debugHistory_;
+    std::vector<std::string> tickLog_;
+    std::uint64_t tickCount_ = 0;
+    void runOneTick();
+    void pushDebugSnapshot();
+    void restoreDebugSnapshot(const DebugSnapshot& snapshot);
+    void buildTickLog(double energyBefore, double kineticBefore, double potentialBefore);
 };
 } // namespace gtc::native

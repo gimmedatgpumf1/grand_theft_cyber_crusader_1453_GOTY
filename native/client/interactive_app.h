@@ -419,6 +419,7 @@ private:
     void stopPlaygroundDrag() { playgroundDragging_=false; playground_.endDrag(); }
     void enterPlayground() {
         if (!playground_.reset()) { std::cerr << "Unable to start playground\n"; return; }
+        debugPaused_ = false; debugLogOpen_ = false; debugLogScroll_ = 0;
         playgroundReturnToRoom_=testRoom_; roomCamera_.clear(); endOrbit();
         playgroundRestoreCapture_=captured_; keys_.clear(); leftDown_=rightDown_=false;
         testRoom_=false; playgroundMode_=true;
@@ -427,10 +428,13 @@ private:
     }
     void leavePlayground() {
         stopPlaygroundDrag(); playgroundCamera_.clear(); playgroundMode_=false;
+        debugPaused_ = false; debugLogOpen_ = false; debugLogScroll_ = 0;
         testRoom_=playgroundReturnToRoom_; playgroundReturnToRoom_=false;
         window_.captureMouse(playgroundRestoreCapture_); captured_=playgroundRestoreCapture_;
         playgroundRestoreCapture_=false; keys_.clear(); sendInput();
     }
+    // The debug overlay: the paused status strip and the physics log panel.
+    void drawPlaygroundDebug(NativeFrame& frame);
     void handlePlayground(const WindowEvent& event) {
         if (event.type==WindowEvent::Type::KeyDown && event.key=='p') { if (!event.repeat) leavePlayground(); return; }
         if (playgroundDragging_ && event.type==WindowEvent::Type::MouseUp && event.button==1) { stopPlaygroundDrag(); return; }
@@ -460,6 +464,39 @@ private:
         // amounts rather than as directions only.
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='f') { playground_.toggleForceArrows(); return; }
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='n') { playground_.toggleForceNewtons(); return; }
+        // D pauses the ticking; pressing it again resumes. While paused, . steps
+        // one tick forward and , steps one tick back, so exactly what happens
+        // in each tick can be watched. / opens the physics log: every speed,
+        // energy, contact and force of the tick on screen, scrollable with the
+        // wheel. Stepping pauses first if the room was running, so the keys
+        // mean the same thing either way.
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='d') {
+            debugPaused_ = !debugPaused_;
+            if (!debugPaused_) playground_.resumeFromPause();
+            debugLogScroll_ = 0;
+            return;
+        }
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='.') {
+            if (!debugPaused_) { debugPaused_ = true; playground_.resumeFromPause(); }
+            playground_.stepOnce();
+            debugLogScroll_ = 0;
+            return;
+        }
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==',') {
+            if (!debugPaused_) { debugPaused_ = true; playground_.resumeFromPause(); }
+            playground_.stepBack();
+            debugLogScroll_ = 0;
+            return;
+        }
+        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='/') {
+            debugLogOpen_ = !debugLogOpen_;
+            debugLogScroll_ = 0;
+            return;
+        }
+        if (debugLogOpen_ && event.type==WindowEvent::Type::Wheel) {
+            debugLogScroll_ = std::max(0, debugLogScroll_ - int(event.wheel * 3.0));
+            return;
+        }
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==kKeyF12) { screenshot_=true; return; }
         if (event.type==WindowEvent::Type::KeyDown && event.key==kKeyEscape) {
             stopPlaygroundDrag(); window_.captureMouse(false); captured_=false; return;
@@ -491,6 +528,10 @@ private:
 
     SkeletonRoom room_;
     PlaygroundRoom playground_;
+    // Debug stepping: D pauses the ticking, . and , step one tick forward and
+    // back, / opens the physics log. The log scrolls with the wheel while open.
+    bool debugPaused_ = false, debugLogOpen_ = false;
+    int debugLogScroll_ = 0;
     RoomFreecam roomCamera_,playgroundCamera_;
     bool playgroundMode_=false,playgroundDragging_=false,playgroundReturnToRoom_=false,playgroundRestoreCapture_=false;
     SkeletonComparisonUi roomUi_;

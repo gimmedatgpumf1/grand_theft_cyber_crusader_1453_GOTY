@@ -63,7 +63,9 @@ int App::run() {
             }
             if (playgroundMode_) {
                 if (playgroundDragging_) updatePlaygroundDragRay();
-                playground_.advance(dt);
+                // Paused (D): the ticking stops entirely. Stepping is done by
+                // the . and , keys, one tick at a time.
+                if (!debugPaused_) playground_.advance(dt);
             } else if (testRoom_) {
                 roomCamera_.move(dt);
             } else updateGod(dt);
@@ -83,7 +85,7 @@ int App::run() {
                 }
                 layer_.clear(frame.width,frame.height); frame.ui=&layer_;
                 frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
-                if (playgroundMode_) { drawFpsCounter(frame,view_.fps); }
+                if (playgroundMode_) { drawFpsCounter(frame,view_.fps); drawPlaygroundDebug(frame); }
                 else if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
                 else { roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps); }
                 if (captured_) {
@@ -167,6 +169,71 @@ int App::run() {
         }
         return 0;
     }
+
+// The debug overlay for the playground: the paused status strip, the hint, and
+// the physics log panel. All of it is interface quads and glyphs, like the FPS
+// counter -- the same frame.ui layer, the same text.
+void App::drawPlaygroundDebug(NativeFrame& frame) {
+    const int pixelHeight = std::clamp(int(13.0 * std::max(1, frame.height) / 480.0), 12, 18);
+    const int lineHeight = std::max(1, textHeightPixels(pixelHeight)) + 2;
+    const Color ink = colorHex(hexRgb("#e6edf2"));
+    const Color accent = colorHex(hexRgb("#d7ff54"));
+    const Color panel = colorHex(hexRgb("#05090b"));
+    const double previousScale = frame.uiScale;
+    const double previousOffsetX = frame.uiOffsetX;
+    const double previousOffsetY = frame.uiOffsetY;
+    frame.uiScale = 1.0;
+    frame.uiOffsetX = 0.0;
+    frame.uiOffsetY = 0.0;
+    const auto strip = [&](int x, int y, const std::string& text, Color color) {
+        const int width = textWidthPixels(text, pixelHeight);
+        const int height = textHeightPixels(pixelHeight);
+        if (width <= 0 || height <= 0) return;
+        const int padding = std::max(6, pixelHeight / 3);
+        frame.blendRectangle(x, y, width + padding * 2, height + padding * 2, panel, 0.75);
+        drawTextPixels(frame, x + padding, y + padding, text, color, pixelHeight);
+    };
+    // The hint, always: how to get into debug mode at all.
+    strip(8, frame.height - textHeightPixels(pixelHeight) - 24, "D: pause/step   /: physics log", ink);
+    if (debugPaused_) {
+        char status[160];
+        std::snprintf(status, sizeof(status),
+                      "PAUSED tick %llu (history %zu)   D resume   . step fwd   , step back   / log",
+                      static_cast<unsigned long long>(playground_.tickCount()),
+                      playground_.debugHistoryDepth());
+        strip(8, 8, status, accent);
+    }
+    if (debugLogOpen_) {
+        const std::vector<std::string>& log = playground_.tickLog();
+        char header[96];
+        std::snprintf(header, sizeof(header), "PHYSICS LOG - tick %llu (wheel scrolls)",
+                      static_cast<unsigned long long>(playground_.tickCount()));
+        const int margin = 8;
+        const int panelHeight = std::max(lineHeight * 4, frame.height - margin * 2);
+        const int visible = std::max(1, (panelHeight - lineHeight * 2) / lineHeight);
+        const int maxScroll = std::max(0, int(log.size()) - visible);
+        debugLogScroll_ = std::clamp(debugLogScroll_, 0, maxScroll);
+        int panelWidth = textWidthPixels(header, pixelHeight);
+        const int last = std::min(int(log.size()), debugLogScroll_ + visible);
+        for (int i = debugLogScroll_; i < last; ++i)
+            panelWidth = std::max(panelWidth, textWidthPixels(log[std::size_t(i)], pixelHeight));
+        const int padding = std::max(6, pixelHeight / 3);
+        panelWidth = std::min(panelWidth + padding * 2, int(frame.width * 0.62));
+        const int x = frame.width - panelWidth - margin;
+        const int y = margin;
+        frame.blendRectangle(x, y, panelWidth, panelHeight, panel, 0.85);
+        drawTextPixels(frame, x + padding, y + padding, header, accent, pixelHeight);
+        for (int i = debugLogScroll_; i < last; ++i)
+            drawTextPixels(frame, x + padding, y + padding + lineHeight * (i - debugLogScroll_ + 1),
+                           log[std::size_t(i)], ink, pixelHeight);
+        if (log.empty())
+            drawTextPixels(frame, x + padding, y + padding + lineHeight, "(no tick yet - press . to step)",
+                           ink, pixelHeight);
+    }
+    frame.uiScale = previousScale;
+    frame.uiOffsetX = previousOffsetX;
+    frame.uiOffsetY = previousOffsetY;
+}
 
 void App::handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {

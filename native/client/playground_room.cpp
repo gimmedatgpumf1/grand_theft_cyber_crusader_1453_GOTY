@@ -9,6 +9,7 @@
 #include "client/ui_layer.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -583,6 +584,19 @@ void PlaygroundRoom::advance(double seconds) {
     int ticks = 0;
     while (accumulator_ >= kTick && ticks < 5) {
         accumulator_ -= kTick;
+        runOneTick();
+        ++ticks;
+    }
+}
+
+// One tick, whole. advance() calls this from its accumulator; stepOnce() calls
+// it directly. The snapshot is taken before anything moves, so stepping back
+// restores the state this tick started from, and the log built at the end is
+// the log of this tick.
+void PlaygroundRoom::runOneTick() {
+        pushDebugSnapshot();
+        double kineticBefore = 0.0, potentialBefore = 0.0;
+        energyBudget(kineticBefore, potentialBefore);
         const bool tracePhysics = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
         const char* traceContext = tracePhysics ? std::getenv("GTC_TRACE_CONTEXT") : "";
         const double traceInitialEnergy = totalEnergy();
@@ -723,8 +737,214 @@ void PlaygroundRoom::advance(double seconds) {
         if (tracePhysics)
             std::printf("ROOM_TRACE_TOTAL context=%s E_start=%.12g E_end=%.12g dE=%+.12g\n",
                         traceContext, traceInitialEnergy, totalEnergy(), totalEnergy()-traceInitialEnergy);
-        ++ticks;
+        buildTickLog(traceInitialEnergy, kineticBefore, potentialBefore);
+        ++tickCount_;
+}
+
+// --- debug stepping ---------------------------------------------------------
+//
+// The snapshot is a plain copy of everything a tick reads or writes. It is
+// taken at the start of every tick, kept for the last 600, and restored by
+// stepBack(). Copying it is a memcpy of tens of kilobytes -- nothing next to
+// the tick itself -- so it runs always, not only while the log is open: the
+// moment D is pressed the history is already there.
+
+void PlaygroundRoom::pushDebugSnapshot() {
+    DebugHistoryEntry entry;
+    DebugSnapshot& s = entry.snapshot;
+    s.bodies = bodies_;
+    s.balls = balls_;
+    s.rope = rope_;
+    s.extraRopes = extraRopes_;
+    s.point = point_; s.previous = previous_; s.shown = shown_;
+    s.velocity = velocity_; s.pointForce = pointForce_;
+    s.traceFrom = traceFrom_; s.traceTo = traceTo_;
+    s.ghosts = ghosts_; s.ghostCount = ghostCount_; s.ghostNext = ghostNext_;
+    s.forces = forces_; s.forceCount = forceCount_;
+    s.impulses = impulses_; s.impulseCount = impulseCount_;
+    s.tickPatches = tickPatches_;
+    s.accumulator = accumulator_;
+    s.dragTarget = dragTarget_; s.dragBall = dragBall_; s.dragBody = dragBody_;
+    s.handSpeed = handSpeed_; s.planeGrab = planeGrab_; s.grabOffset = grabOffset_;
+    s.dragOrigin = dragOrigin_; s.dragDirection = dragDirection_;
+    s.slideSpan = slideSpan_; s.supportNormal = supportNormal_;
+    s.pointArrival = pointArrival_; s.heldStill = heldStill_;
+    s.resting = resting_; s.pointFrozen = pointFrozen_;
+    s.restingBody = restingBody_; s.restingOnBall = restingOnBall_;
+    s.restingBall = restingBall_;
+    s.bodyStepClamped = bodyStepClamped_;
+    s.tickCount = tickCount_;
+    debugHistory_.push_back(std::move(entry));
+    if (debugHistory_.size() > kDebugHistoryCapacity)
+        debugHistory_.erase(debugHistory_.begin());
+}
+
+void PlaygroundRoom::restoreDebugSnapshot(const DebugSnapshot& s) {
+    bodies_ = s.bodies;
+    balls_ = s.balls;
+    rope_ = s.rope;
+    extraRopes_ = s.extraRopes;
+    point_ = s.point; previous_ = s.previous; shown_ = s.shown;
+    velocity_ = s.velocity; pointForce_ = s.pointForce;
+    traceFrom_ = s.traceFrom; traceTo_ = s.traceTo;
+    ghosts_ = s.ghosts; ghostCount_ = s.ghostCount; ghostNext_ = s.ghostNext;
+    forces_ = s.forces; forceCount_ = s.forceCount;
+    impulses_ = s.impulses; impulseCount_ = s.impulseCount;
+    tickPatches_ = s.tickPatches;
+    accumulator_ = s.accumulator;
+    dragTarget_ = s.dragTarget; dragBall_ = s.dragBall; dragBody_ = s.dragBody;
+    handSpeed_ = s.handSpeed; planeGrab_ = s.planeGrab; grabOffset_ = s.grabOffset;
+    dragOrigin_ = s.dragOrigin; dragDirection_ = s.dragDirection;
+    slideSpan_ = s.slideSpan; supportNormal_ = s.supportNormal;
+    pointArrival_ = s.pointArrival; heldStill_ = s.heldStill;
+    resting_ = s.resting; pointFrozen_ = s.pointFrozen;
+    restingBody_ = s.restingBody; restingOnBall_ = s.restingOnBall;
+    restingBall_ = s.restingBall;
+    bodyStepClamped_ = s.bodyStepClamped;
+    tickCount_ = s.tickCount;
+}
+
+void PlaygroundRoom::stepOnce() {
+    // One tick and no more, whatever the accumulator was holding. The
+    // accumulator is left at a whole tick so the picture shows the tick's end
+    // state; resumeFromPause() clears it again when the room is let run.
+    accumulator_ = 0.0;
+    runOneTick();
+    accumulator_ = kTick;
+}
+
+bool PlaygroundRoom::stepBack() {
+    if (debugHistory_.empty()) return false;
+    const DebugHistoryEntry entry = std::move(debugHistory_.back());
+    debugHistory_.pop_back();
+    restoreDebugSnapshot(entry.snapshot);
+    // The log of the tick that produced this state is the new top entry's --
+    // it ran from the state before this one to the state now on screen.
+    tickLog_ = debugHistory_.empty() ? std::vector<std::string>{} : debugHistory_.back().log;
+    // Show the restored tick's end state, not its start.
+    accumulator_ = kTick;
+    return true;
+}
+
+namespace {
+// The names the ledger writes, for the log. One table, so the log and the
+// arrows can never disagree about what a kind is called.
+const char* forceKindName(PlaygroundRoom::ForceKind kind) {
+    switch (kind) {
+        case PlaygroundRoom::ForceKind::Gravity: return "Gravity";
+        case PlaygroundRoom::ForceKind::Contact: return "Contact";
+        case PlaygroundRoom::ForceKind::Friction: return "Friction";
+        case PlaygroundRoom::ForceKind::Pair: return "Pair";
+        case PlaygroundRoom::ForceKind::Ball: return "Ball";
+        case PlaygroundRoom::ForceKind::Drag: return "Drag";
+        case PlaygroundRoom::ForceKind::Rolling: return "Rolling";
+        case PlaygroundRoom::ForceKind::Rope: return "Rope";
+        default: return "?";
     }
+}
+const char* bodyName(std::size_t index) {
+    switch (index) {
+        case PlaygroundRoom::kCube: return "cube";
+        case PlaygroundRoom::kTriangle: return "triangle";
+        case PlaygroundRoom::kSeesaw: return "seesaw";
+        default: return "body";
+    }
+}
+}  // namespace
+
+// What one tick did, line by line. Read at the end of the tick, from the state
+// the tick left and the ledger it wrote: the energy before and after, every
+// speed and spin, every contact patch with its gaps and impulses, every force
+// and impulse in the ledger, and the counters. Nothing here is recomputed --
+// it is the room's own numbers, written down.
+void PlaygroundRoom::buildTickLog(double energyBefore, double kineticBefore, double potentialBefore) {
+    tickLog_.clear();
+    double kineticAfter = 0.0, potentialAfter = 0.0;
+    energyBudget(kineticAfter, potentialAfter);
+    const double energyAfter = kineticAfter + potentialAfter;
+    char line[512];
+    const auto add = [&](const char* format, ...) {
+        va_list args;
+        va_start(args, format);
+        std::vsnprintf(line, sizeof(line), format, args);
+        va_end(args);
+        tickLog_.emplace_back(line);
+    };
+    add("=== TICK %llu (dt %.3f s) ===", static_cast<unsigned long long>(tickCount_ + 1), kTick);
+    add("ENERGY start KE %.9g PE %.9g TOTAL %.9g", kineticBefore, potentialBefore, energyBefore);
+    add("ENERGY end   KE %.9g PE %.9g TOTAL %.9g  dE %+.9g", kineticAfter, potentialAfter, energyAfter,
+        energyAfter - energyBefore);
+    for (std::size_t i = 0; i < kBodyCount; ++i) {
+        const Body& b = bodies_[i];
+        if (b.count == 0) continue;
+        const double ke = 0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * b.moment * b.spin * b.spin;
+        add("BODY %zu %s mass %.6g I %.6g centre (%.9g, %.9g) angle %.9g v (%.9g, %.9g) spin %.9g frozen %d "
+            "contacts %d met %d KE %.9g PE %.9g",
+            i, bodyName(i), b.mass, b.moment, b.centre.x, b.centre.y, b.angle, b.velocity.x, b.velocity.y,
+            b.spin, int(b.frozen), b.contacts, b.met, ke, b.mass * playground_tick::kGravity * b.centre.y);
+        for (std::size_t c = 0; c < b.count; ++c)
+            add("  corner %zu (%.9g, %.9g)", c, b.position[c].x, b.position[c].y);
+        if (b.appliedCount > 0) {
+            add("  rest forces replayed: %zu", b.appliedCount);
+            for (std::size_t a = 0; a < b.appliedCount; ++a)
+                add("    %s at (%.9g, %.9g) J (%.9g, %.9g)", forceKindName(b.applied[a].kind),
+                    b.applied[a].at.x, b.applied[a].at.y, b.applied[a].impulse.x, b.applied[a].impulse.y);
+        }
+    }
+    for (std::size_t i = 0; i < kBallCount; ++i) {
+        const Ball& b = balls_[i];
+        const double inertia = 0.4 * b.mass * b.radius * b.radius;
+        const double ke = 0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * inertia * b.spin * b.spin;
+        add("BALL %zu pos (%.9g, %.9g) v (%.9g, %.9g) spin %.9g angle %.9g frozen %d touching %d standing %d "
+            "blows (%.9g, %.9g) KE %.9g PE %.9g",
+            i, b.position.x, b.position.y, b.velocity.x, b.velocity.y, b.spin, b.angle, int(b.frozen),
+            int(b.touching), int(b.standing), b.blows.x, b.blows.y, ke,
+            b.mass * playground_tick::kGravity * b.position.y);
+        for (std::size_t t = 0; t < b.touchCount; ++t)
+            add("  touch %zu body %zu normal (%.6g, %.6g) surfaceV (%.6g, %.6g) pressed %.9g given %.9g arrival %.9g",
+                t, b.touches[t].body, b.touches[t].normal.x, b.touches[t].normal.y,
+                b.touches[t].surfaceVelocity.x, b.touches[t].surfaceVelocity.y, b.touches[t].pressed,
+                b.touches[t].given, b.touches[t].arrival);
+        for (std::size_t t = 0; t < b.supportCount; ++t)
+            add("  support %zu body %zu normal (%.6g, %.6g)", t, b.supports[t].body, b.supports[t].normal.x,
+                b.supports[t].normal.y);
+        for (std::size_t t = 0; t < Ball::kSurfaces; ++t)
+            if (b.meetingGiven[t] != 0.0 || b.meetingArrival[t] != 0.0)
+                add("  meeting surface %zu given %.9g arrival %.9g speedIn %.9g speedOut %.9g", t,
+                    b.meetingGiven[t], b.meetingArrival[t], b.meetingSpeedIn[t], b.meetingSpeedOut[t]);
+    }
+    add("POINT pos (%.9g, %.9g) v (%.9g, %.9g) resting %d frozen %d supportBody %d onBall %d slideSpan %.9g",
+        point_.x, point_.y, velocity_.x, velocity_.y, int(resting_), int(pointFrozen_), restingBody_,
+        int(restingOnBall_), slideSpan_);
+    add("ROPE anchor (%.9g, %.9g) length %.9g taut %d tension %.9g ballDist %.9g", rope_.anchor.x,
+        rope_.anchor.y, rope_.length, int(rope_.taut), rope_.tension, ropeBallDistance());
+    add("PATCHES %zu", tickPatches_.count);
+    for (std::size_t p = 0; p < tickPatches_.count; ++p) {
+        const Manifold& m = tickPatches_.items[p];
+        add("  patch %zu body %zu other %zu ball %zu ends %zu normal (%.6g, %.6g) kind %s quiet %d", p, m.body,
+            m.other, m.ball, m.ends, m.normal.x, m.normal.y, forceKindName(m.kind), int(m.quiet));
+        for (std::size_t e = 0; e < m.ends; ++e)
+            add("    end %zu point (%.9g, %.9g) gap %.9g Jn %.9g Jt %.9g rebound %.9g", e, m.point[e].x,
+                m.point[e].y, m.gap[e], m.normalImpulse[e], m.tangentImpulse[e], m.rebound[e]);
+    }
+    add("FORCES %zu", forceCount_);
+    for (std::size_t f = 0; f < forceCount_; ++f) {
+        const ForceSample& s = forces_[f];
+        add("  force %zu %s owner %zu at (%.9g, %.9g) F (%.9g, %.9g) moment %.9g couple %d", f,
+            forceKindName(s.kind), s.owner, s.at.x, s.at.y, s.force.x, s.force.y, s.moment, int(s.couple));
+    }
+    add("IMPULSES %zu", impulseCount_);
+    for (std::size_t f = 0; f < impulseCount_; ++f) {
+        const RecordedImpulse& s = impulses_[f];
+        add("  impulse %zu %s on %zu at (%.9g, %.9g) J (%.9g, %.9g)", f, forceKindName(s.kind), s.on, s.at.x,
+            s.at.y, s.impulse.x, s.impulse.y);
+    }
+    std::size_t foundThrough = 0, liftedOut = 0;
+    for (const Ball& b : balls_) { foundThrough += b.foundThrough; liftedOut += b.liftedOut; }
+    add("COUNTERS bodyStepClamped %zu foundThrough %zu liftedOut %zu", bodyStepClamped_, foundThrough, liftedOut);
+    // Hand the log to the history entry this tick started from, so stepping
+    // back to that state shows this tick's log with it.
+    if (!debugHistory_.empty()) debugHistory_.back().log = tickLog_;
 }
 
 } // namespace gtc::native
