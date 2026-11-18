@@ -615,6 +615,7 @@ void PlaygroundRoom::placeMarkers() {
     // scaled to the ball's radius, so a ball of a different size needs no new geometry
     // -- and there is nothing here that knows which ball is on a rope.
     for (const Ball& ball : balls_) {
+        if (!ball.active) continue;  // not in the room: nothing was built for it
         const double radius = ball.radius;
         scene_.batches[ball.faceBatch].modelMatrix =
             {radius, 0, 0, 0, 0, radius, 0, 0, 0, 0, 1, 0, ball.shown.x, ball.shown.y, kBallZ, 1};
