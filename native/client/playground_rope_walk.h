@@ -264,8 +264,14 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
         for (std::size_t i = 0; i < kBodyCount; ++i) {
             Body& moving = bodies_[i];
             if (!stopped[i] || bodyHeld(i) || moving.pivoted || moving.frozen) continue;
-            moving.centre += moving.velocity * taken;
-            moving.angle += moving.spin * taken;
+            // Hitscan-swept, as in the constrained drift below: never carried
+            // through anything, even over the interval after an impact.
+            const Vec3 wanted = moving.centre + moving.velocity * taken;
+            const double wantedAngle = moving.angle + moving.spin * taken;
+            const double along = bodyStepAllowed(i, moving.centre, moving.angle, wanted, wantedAngle, true);
+            if (along < 1.0) absorbRefusedStep(moving, i, along);
+            moving.centre = moving.centre + (wanted - moving.centre) * along;
+            moving.angle += (wantedAngle - moving.angle) * along;
             placeCorners(moving);
         }
         elapsed += taken;
@@ -786,11 +792,29 @@ bool PlaygroundRoom::walkRopeContacts(Ball& ball) {
             const double energyAfterFirstSolve = localEnergy();
             state.position += state.velocity * step;
             ball.angle += ball.spin * step;
+            // The drift is hitscan-swept, not taken blind: a body is carried
+            // only as far as the first instant its outline touches anything
+            // (bodyStepAllowed stops at gap = 0), so the position step can
+            // never put two bodies inside each other. What the sweep refuses
+            // is absorbed as a contact, exactly as in advanceBodies().
             for (std::size_t i = 0; i < kBodyCount; ++i) {
                 Body& body = bodies_[i];
                 if (!stopped[i] || bodyHeld(i) || body.frozen) continue;
-                if (!body.pivoted) body.centre += body.velocity * step;
-                body.angle += body.spin * step;
+                if (body.pivoted) {
+                    const double turn = body.spin * step;
+                    const double fraction = turn != 0.0 ? pivotTurnAllowed(body, turn) : 1.0;
+                    if (fraction < 1.0) absorbRefusedStep(body, i, fraction);
+                    body.angle += turn * fraction;
+                    body.centre = body.pivotPoint;
+                    placeCorners(body);
+                    continue;
+                }
+                const Vec3 wanted = body.centre + body.velocity * step;
+                const double wantedAngle = body.angle + body.spin * step;
+                const double along = bodyStepAllowed(i, body.centre, body.angle, wanted, wantedAngle, true);
+                if (along < 1.0) absorbRefusedStep(body, i, along);
+                body.centre = body.centre + (wanted - body.centre) * along;
+                body.angle += (wantedAngle - body.angle) * along;
                 placeCorners(body);
             }
             const double energyAfterDrift = localEnergy();
