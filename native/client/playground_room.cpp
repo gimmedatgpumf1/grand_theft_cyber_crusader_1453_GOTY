@@ -301,6 +301,7 @@ void PlaygroundRoom::tick() {
             Vec3 facing{0, 1, 0};
             for (std::size_t index = 0; index < kBallCount; ++index) {
                 const Ball& ball = balls_[index];
+                if (!ball.active) continue;  // not in the room
                 double reach = 2.0;
                 Vec3 way{0, 1, 0};
                 if (!segmentHitsCircle(point_, next, ball.position, kPointRadius + ball.radius, reach, way)) continue;

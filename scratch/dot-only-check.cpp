@@ -78,10 +78,12 @@ int main() {
     // Turning the mode off brings the full room back.
     room.setDotOnly(false);
     room.reset();
-    bool anyParked = false;
+    bool anyRemoved = false;
     for (std::size_t i = 0; i < PlaygroundRoom::kBodyCount; ++i)
-        if (room.bodies_[i].centre.y == -1000.0) anyParked = true;
-    check(!anyParked, "full room returns when dot-only is off", "");
+        if (room.bodies_[i].count == 0) anyRemoved = true;
+    for (std::size_t i = 0; i < PlaygroundRoom::kBallCount; ++i)
+        if (!room.balls_[i].active) anyRemoved = true;
+    check(!anyRemoved, "full room returns when dot-only is off", "");
 
     std::printf(failures ? "dot-only: FAIL (%d)\n" : "dot-only: PASS\n", failures);
     return failures ? 1 : 0;

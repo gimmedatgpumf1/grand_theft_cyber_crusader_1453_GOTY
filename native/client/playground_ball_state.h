@@ -138,6 +138,11 @@ struct Ball {
     // The forces on the ball this tick, in newtons, before the integrator.
     Vec3 force{};
     bool frozen = false, touching = false;
+    // Whether the ball is in the room at all. A ball that is not in the room is
+    // not drawn, not stepped, and not met by the point -- it is simply absent,
+    // which is what an emptied room means. The dot-only mode switches every
+    // ball off; the full room leaves them on.
+    bool active = true;
     // Whether static friction could hold the ball at every surface it touched this
     // tick. A slope cannot, so a ball on one is never at rest.
     bool standing = true;

@@ -380,30 +380,25 @@ bool PlaygroundRoom::reset(Vec3 start, Vec3 startVelocity) {
     }
     // Dot-only mode: the room is emptied down to the point and the floor. The
     // bodies, balls and ropes above are still set up in full -- nothing is
-    // deleted -- but they are then frozen and parked below the floor, where
-    // they are invisible and the point can never reach them. To bring the
-    // room back, delete this block.
+    // deleted -- but they are then taken out of the room: the bodies cease to
+    // exist (count zero, which is how the room says a body is not there), the
+    // balls are switched off, and the ropes are detached. To bring the room
+    // back, delete this block.
     if (dotOnly_) {
-    for (std::size_t index = 0; index < kBodyCount; ++index) {
-        Body& body = bodies_[index];
-        body.frozen = true;
-        body.velocity = {};
-        body.spin = 0.0;
-        body.centre = body.previousCentre = Vec3{0, -1000, 0};
-        placeCorners(body);
-        body.previous = body.shown = body.position;
-    }
-    for (Ball& ball : balls_) {
-        ball.frozen = true;
-        ball.velocity = {};
-        ball.spin = 0.0;
-        ball.position = ball.previous = ball.shown = Vec3{0, -1000, 0};
-    }
-    for (std::size_t i = 0; i < kRopeCount; ++i) {
-        Rope& rope = ropeForBall(i + 1);
-        rope.attached = false;
-        rope.anchor = Vec3{0, -1000, 0};
-    }
+        for (std::size_t index = 0; index < kBodyCount; ++index) {
+            Body& body = bodies_[index];
+            body.count = 0;
+            body.frozen = true;
+            body.velocity = {};
+            body.spin = 0.0;
+        }
+        for (Ball& ball : balls_) {
+            ball.active = false;
+            ball.frozen = true;
+            ball.velocity = {};
+            ball.spin = 0.0;
+        }
+        for (std::size_t i = 0; i < kRopeCount; ++i) ropeForBall(i + 1).attached = false;
     }
     restingOnBall_ = false;
     restingBall_ = kThrowBall;

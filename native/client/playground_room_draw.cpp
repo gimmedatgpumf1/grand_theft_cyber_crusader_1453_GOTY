@@ -605,7 +605,8 @@ void PlaygroundRoom::placeMarkers() {
         scene_.batches[rope.ropeBatch].modelMatrix =
             rope.attached ? segment({anchor.x, anchor.y, kRopeZ}, {at.x, at.y, kRopeZ}, kRopeHalfWidth)
                           : translation({0, -1000, 0});
-        scene_.batches[rope.anchorBatch].modelMatrix = translation({anchor.x, anchor.y, kAnchorZ});
+        scene_.batches[rope.anchorBatch].modelMatrix =
+            rope.attached ? translation({anchor.x, anchor.y, kAnchorZ}) : translation({0, -1000, 0});
     }
     // Every ball, at the radius it has and the turn it was drawn with. A unit disc
     // scaled to the ball's radius, so a ball of a different size needs no new geometry

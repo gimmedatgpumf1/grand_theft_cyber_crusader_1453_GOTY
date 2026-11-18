@@ -241,6 +241,7 @@ void PlaygroundRoom::energyBudget(double& kinetic, double& potential) const {
     // because both of them are balls -- the one on the rope has as much kinetic energy
     // as the one thrown, and the room's books would not balance if it were left out.
     for (const Ball& ball : balls_) {
+        if (!ball.active) continue;  // not in the room
         kinetic += 0.5 * ball.mass * dot(ball.velocity, ball.velocity);
         // A solid sphere, which is the moment the ball's own contacts are solved with.
         const double moment = 0.4 * ball.mass * ball.radius * ball.radius;

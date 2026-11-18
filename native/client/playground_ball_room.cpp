@@ -48,6 +48,7 @@ bool PlaygroundRoom::ballNeighboursMoving(const Ball& ball) const {
     for (std::size_t other = 0; other < kBallCount; ++other) {
         if (&balls_[other] == &ball) continue;
         const Ball& neighbour = balls_[other];
+        if (!neighbour.active) continue;  // not in the room
         const double reach = length(neighbour.position - neighbour.previous);
         if (reach > playground_tick::kQuantum &&
             length(neighbour.position - ball.position) <= ball.radius + neighbour.radius + reach +
@@ -93,6 +94,7 @@ bool PlaygroundRoom::ballPlacementClear(const Ball& ball, Vec3 at) const {
 void PlaygroundRoom::tickBalls() {
     for (std::size_t index = 0; index < kBallCount; ++index) {
         Ball& ball = balls_[index];
+        if (!ball.active) continue;  // not in the room
         Rope& rope = ropeForBall(index);
         const bool traceBallTick = std::getenv("GTC_TRACE_CONTEXT") != nullptr;
         const double traceEnergyBefore = traceBallTick ? totalEnergy() : 0.0;
