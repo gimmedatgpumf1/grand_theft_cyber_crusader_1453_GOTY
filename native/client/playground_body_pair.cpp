@@ -504,11 +504,11 @@ double PlaygroundRoom::keepAboveFloor(std::size_t index, Vec3 fromCentre, double
             down = std::min(down, centre.y + body.local[i].x * s + body.local[i].y * c);
         return down;
     };
-    if (lowest(along) >= playground_tick::kSurfaceY - playground_tick::kQuantum) return along;
+    if (lowest(along) >= playground_tick::kSurfaceY) return along;
     double low = 0.0, high = along;
     for (int bisect = 0; bisect < 60; ++bisect) {
         const double mid = 0.5 * (low + high);
-        if (lowest(mid) >= playground_tick::kSurfaceY - playground_tick::kQuantum)
+        if (lowest(mid) >= playground_tick::kSurfaceY)
             low = mid;
         else
             high = mid;

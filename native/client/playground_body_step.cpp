@@ -150,17 +150,19 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
         }
     };
 
-    // Where the step may not take the body: through anything, deeper than a micrometre.
-    // A body that begins its step already through something -- a hair through, from the
-    // last tick's arithmetic -- may not get any deeper, and that is the same line: the
-    // rule is about the body getting in, not about where it happened to start.
+    // Where the step may not take the body: through anything at all. This is a
+    // hitscan, not a recovery: the step is stopped at the first instant the
+    // outline touches (gap = 0), so a body never ends a tick inside anything
+    // and separateBodies() has nothing to push out. A body that begins its
+    // step already through something -- a hair through, from the last tick's
+    // arithmetic -- may not get any deeper, and may still move out or slide
+    // along: the rule is about the body getting in, not about where it
+    // happened to start.
     poseAt(0.0);
     survey();
     double startGap = 1e30;
     for (std::size_t i = 0; i < approachCount; ++i) startGap = std::min(startGap, approaches[i].gap);
-    const double limit = (mayBeginInContact && startGap < -playground_tick::kQuantum)
-                             ? startGap
-                             : -playground_tick::kQuantum;
+    const double limit = (mayBeginInContact && startGap < 0.0) ? startGap : 0.0;
 
     // The soonest any part of the body could come within `limit` of anything, as the
     // piece of *this step* at which that happens: how much distance is left, over how
@@ -214,11 +216,14 @@ double PlaygroundRoom::bodyStepAllowed(std::size_t index, Vec3 fromCentre, doubl
             const Approach& row = approaches[i];
             const double need = row.gap - limit;
             const double closing = -dot(row.closingSpeed, row.normal);
-            if (!(need > playground_tick::kQuantum)) {
-                // The sweep is within one geometric quantum of contact. Stop at the
-                // current conservative fraction instead of taking ever-smaller time
-                // advances around two faces that meet at a corner. This gives a
-                // scale-aware convergence condition without a fixed pass-count cap.
+            if (!(need > 1e-12)) {
+                // The sweep is at contact (within floating-point noise of the
+                // touching instant). Stop at the current conservative fraction
+                // instead of taking ever-smaller time advances around two
+                // faces that meet at a corner. The threshold is the arithmetic's
+                // own noise, not the room's micrometre resolution: a body
+                // half a micrometre from a surface is still travelling to it
+                // and must be allowed to arrive, not frozen in mid-air.
                 if (!(closing > 0.0)) continue;
                 stopping = row.normal;
                 return 0.0;
