@@ -67,11 +67,22 @@ struct NativeWindow::Impl {
         WORD word = 0;
         const int count = ToAscii(static_cast<UINT>(value),
                                   static_cast<UINT>((scan >> 16) & 0xff), state, &word, 0);
-        if (count != 1) return 0;
-        const unsigned char character = static_cast<unsigned char>(word);
-        if (character >= 'A' && character <= 'Z') return character - 'A' + 'a';
-        if (character >= 32 && character < 127) return character;
-        return 0;
+        if (count == 1) {
+            const unsigned char character = static_cast<unsigned char>(word);
+            if (character >= 'A' && character <= 'Z') return character - 'A' + 'a';
+            if (character >= 32 && character < 127) return character;
+        }
+        // ToAscii can come back empty for the OEM keys on some layouts and
+        // keyboard states. The debug keys are '/', '.' and ',': fall back to
+        // their virtual codes so the log and stepping still arrive. Layouts
+        // that move these keys are served by ToAscii above; this only fires
+        // when it translated nothing.
+        switch (value) {
+            case VK_OEM_2: return '/';
+            case VK_OEM_PERIOD: return '.';
+            case VK_OEM_COMMA: return ',';
+            default: return 0;
+        }
     }
 
     static int keyEvent(WPARAM value, LPARAM scan) {

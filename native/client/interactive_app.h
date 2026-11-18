@@ -491,10 +491,10 @@ private:
         if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='/') {
             debugLogOpen_ = !debugLogOpen_;
             debugLogScroll_ = 0;
-            // Opening the log while paused with no tick yet (paused before the
-            // first tick, or just after a reset): step once so the panel shows
-            // a real tick's calculations instead of the empty placeholder.
-            if (debugLogOpen_ && debugPaused_ && playground_.tickLog().empty())
+            // Opening the log with no tick yet (paused before the first tick,
+            // or just after a reset): step once so the panel shows a real
+            // tick's calculations instead of the empty placeholder.
+            if (debugLogOpen_ && playground_.tickLog().empty())
                 playground_.stepOnce();
             return;
         }
