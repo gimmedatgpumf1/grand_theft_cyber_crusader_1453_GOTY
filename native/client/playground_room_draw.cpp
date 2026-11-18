@@ -422,7 +422,8 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     // but it is the thing the plank is held by, and a plank floating on nothing would
     // be a lie about what is holding it up. The pin's own reaction to whatever stands
     // on the plank goes into the ground, which is where a real axle's frame takes it.
-    if (PlaygroundRoom::kBodyCount > PlaygroundRoom::kSeesaw) {
+    // In dot-only mode the seesaw is not in the room, so neither is its axle.
+    if (!dotOnly_ && PlaygroundRoom::kBodyCount > PlaygroundRoom::kSeesaw) {
         const auto& plank = kShapes[PlaygroundRoom::kSeesaw];
         const double px = plank.middle.x, py = plank.middle.y;
         points.clear();
@@ -458,19 +459,28 @@ void PlaygroundRoom::buildScene(const Camera& camera) {
     for (std::size_t index = 0; index < kBodyCount; ++index) {
         const Body& body = bodies_[index];
         const std::uint32_t base = kBodyFaceId + static_cast<std::uint32_t>(index) * kBodySpan;
-        face(points, faces, body.local.data(), body.count, kFaceZ);
+        // A body that is not in the room (count zero) still needs its batches to
+        // exist and be non-empty: an empty mesh is not a valid GPU buffer. It is
+        // given a dummy triangle and hidden every frame by placeMarkers().
+        const std::size_t corners = body.count == 0 ? kMaxCorners : body.count;
+        if (body.count == 0) {
+            points = {{0, 0, kFaceZ}, {1, 0, kFaceZ}, {0, 1, kFaceZ}};
+            faces = {{0, 1, 2}};
+        } else {
+            face(points, faces, body.local.data(), body.count, kFaceZ);
+        }
         raster.setObject(base, {0, 0}, 0);
         raster.mesh(points, faces, flat("#2c5f74"));
 
         points.clear();
         faces.clear();
         quad(points, faces, 0, -1, 1, 1, 0.0);
-        for (std::size_t i = 0; i < body.count; ++i) {
+        for (std::size_t i = 0; i < corners; ++i) {
             raster.setObject(base + kBodyEdgeOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
             raster.mesh(points, faces, flat("#9fd8e8"));
         }
         disc(points, faces, kCornerRadius);
-        for (std::size_t i = 0; i < body.count; ++i) {
+        for (std::size_t i = 0; i < corners; ++i) {
             raster.setObject(base + kBodyCornerOffset + static_cast<std::uint32_t>(i), {0, 0}, 0);
             raster.mesh(points, faces, flat("#ff8a4c"));
         }
