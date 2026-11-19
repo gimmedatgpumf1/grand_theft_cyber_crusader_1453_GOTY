@@ -482,6 +482,23 @@ void PlaygroundRoom::tick() {
         previous_ = point_;
         shown_ = point_;
     }
+    // The dot has finished its walk. Two things follow from where it ended:
+    // if it is stopped, the drag that was computed from its arrival velocity
+    // is a lie -- a still dot has no drag -- so it is struck from the ledger.
+    // And every force the dot felt this tick is drawn at the dot, not at where
+    // the dot was when the force was written down, or the arrows lag behind
+    // the dot they belong to.
+    if (length(velocity_) < kQuantum / kTick) {
+        for (std::size_t i = 0; i < forceCount_; ++i) {
+            ForceSample& sample = forces_[i];
+            if (sample.owner == kDotOwner && sample.kind == ForceKind::Drag)
+                sample.force = {};
+        }
+    }
+    for (std::size_t i = 0; i < forceCount_; ++i) {
+        ForceSample& sample = forces_[i];
+        if (sample.owner == kDotOwner) sample.at = point_;
+    }
     // A frozen body is not stepped at all. It has no velocity and no force to
     // resolve, and stepping it anyway let gravity and the floor clamp nibble at
     // it tick after tick, which drifted a body that was supposed to be asleep.
