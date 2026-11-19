@@ -405,6 +405,10 @@ void PlaygroundRoom::tick() {
             resting_ = true;
             restingBody_ = -1;
             supportNormal_ = {0, 1, 0};
+            // Lying on the plane: the plane carries the weight, and that is a
+            // force in the ledger whether the walk arrived here or the point
+            // was already down.
+            addForce(point_, Vec3{0, kMass * kGravity, 0}, ForceKind::Contact, nullptr, kDotOwner);
             slideSpan_ = kTick;
         } else {
             for (std::size_t index = 0; index < kBodyCount; ++index) {
