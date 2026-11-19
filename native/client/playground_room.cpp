@@ -895,6 +895,7 @@ void PlaygroundRoom::buildTickLog(double energyBefore, double kineticBefore, dou
     }
     for (std::size_t i = 0; i < kBallCount; ++i) {
         const Ball& b = balls_[i];
+        if (!b.active) continue;  // not in the room: no data for what is not there
         const double inertia = 0.4 * b.mass * b.radius * b.radius;
         const double ke = 0.5 * b.mass * dot(b.velocity, b.velocity) + 0.5 * inertia * b.spin * b.spin;
         add("BALL %zu pos (%.9g, %.9g) v (%.9g, %.9g) spin %.9g angle %.9g frozen %d touching %d standing %d "
@@ -918,8 +919,9 @@ void PlaygroundRoom::buildTickLog(double energyBefore, double kineticBefore, dou
     add("POINT pos (%.9g, %.9g) v (%.9g, %.9g) resting %d frozen %d supportBody %d onBall %d slideSpan %.9g",
         point_.x, point_.y, velocity_.x, velocity_.y, int(resting_), int(pointFrozen_), restingBody_,
         int(restingOnBall_), slideSpan_);
-    add("ROPE anchor (%.9g, %.9g) length %.9g taut %d tension %.9g ballDist %.9g", rope_.anchor.x,
-        rope_.anchor.y, rope_.length, int(rope_.taut), rope_.tension, ropeBallDistance());
+    if (rope_.attached)
+        add("ROPE anchor (%.9g, %.9g) length %.9g taut %d tension %.9g ballDist %.9g", rope_.anchor.x,
+            rope_.anchor.y, rope_.length, int(rope_.taut), rope_.tension, ropeBallDistance());
     add("PATCHES %zu", tickPatches_.count);
     for (std::size_t p = 0; p < tickPatches_.count; ++p) {
         const Manifold& m = tickPatches_.items[p];
