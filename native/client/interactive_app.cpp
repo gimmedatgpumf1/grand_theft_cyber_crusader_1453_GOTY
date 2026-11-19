@@ -213,15 +213,43 @@ void App::drawPlaygroundDebug(NativeFrame& frame) {
         std::snprintf(header, sizeof(header), "PHYSICS LOG - tick %llu (wheel scrolls)",
                       static_cast<unsigned long long>(playground_.tickCount()));
         const int margin = 8;
+        const int padding = std::max(6, pixelHeight / 3);
+        // Long log lines are wrapped to fit the panel, so nothing runs off the
+        // edge of the window. The panel is at most 62% of the window wide.
+        const int maxTextWidth = std::max(lineHeight, int(frame.width * 0.62) - padding * 2);
+        const auto wrap = [&](const std::string& text) {
+            std::vector<std::string> out;
+            std::string current;
+            std::size_t pos = 0;
+            while (pos < text.size()) {
+                std::size_t end = text.find(' ', pos);
+                if (end == std::string::npos) end = text.size();
+                std::string word = text.substr(pos, end - pos);
+                std::string trial = current.empty() ? word : current + " " + word;
+                if (textWidthPixels(trial, pixelHeight) <= maxTextWidth || current.empty()) {
+                    current = trial;
+                } else {
+                    out.push_back(current);
+                    current = word;
+                }
+                pos = end + 1;
+            }
+            if (!current.empty() || out.empty()) out.push_back(current);
+            return out;
+        };
+        std::vector<std::string> visual;
+        for (const std::string& line : log) {
+            std::vector<std::string> wrapped = wrap(line);
+            visual.insert(visual.end(), wrapped.begin(), wrapped.end());
+        }
         const int panelHeight = std::max(lineHeight * 4, frame.height - margin * 2);
         const int visible = std::max(1, (panelHeight - lineHeight * 2) / lineHeight);
-        const int maxScroll = std::max(0, int(log.size()) - visible);
+        const int maxScroll = std::max(0, int(visual.size()) - visible);
         debugLogScroll_ = std::clamp(debugLogScroll_, 0, maxScroll);
         int panelWidth = textWidthPixels(header, pixelHeight);
-        const int last = std::min(int(log.size()), debugLogScroll_ + visible);
+        const int last = std::min(int(visual.size()), debugLogScroll_ + visible);
         for (int i = debugLogScroll_; i < last; ++i)
-            panelWidth = std::max(panelWidth, textWidthPixels(log[std::size_t(i)], pixelHeight));
-        const int padding = std::max(6, pixelHeight / 3);
+            panelWidth = std::max(panelWidth, textWidthPixels(visual[std::size_t(i)], pixelHeight));
         panelWidth = std::min(panelWidth + padding * 2, int(frame.width * 0.62));
         const int x = frame.width - panelWidth - margin;
         const int y = margin;
@@ -229,8 +257,8 @@ void App::drawPlaygroundDebug(NativeFrame& frame) {
         drawTextPixels(frame, x + padding, y + padding, header, accent, pixelHeight);
         for (int i = debugLogScroll_; i < last; ++i)
             drawTextPixels(frame, x + padding, y + padding + lineHeight * (i - debugLogScroll_ + 1),
-                           log[std::size_t(i)], ink, pixelHeight);
-        if (log.empty())
+                           visual[std::size_t(i)], ink, pixelHeight);
+        if (visual.empty())
             drawTextPixels(frame, x + padding, y + padding + lineHeight, "(no tick yet - press . to step)",
                            ink, pixelHeight);
     }
