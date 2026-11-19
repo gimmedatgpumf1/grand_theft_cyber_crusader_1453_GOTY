@@ -331,7 +331,10 @@ void PlaygroundRoom::tick() {
             metBall = true;
             // Same rule as a body: what drives into the ball is answered by both
             // sides, and what runs along it is left alone.
+            const Vec3 beforeBall = velocity_;
             pointAgainstBall(balls_[hitIndex < kBallCount ? hitIndex : kThrowBall], normal);
+            // The ball's answer is a force in the ledger, like the plane's.
+            addForce(point_, (velocity_ - beforeBall) * (kMass / kTick), ForceKind::Contact, nullptr, kDotOwner);
             // A bounce is not a rest.
             //
             // Being held up is a fact about where the point is, not about what it
@@ -362,10 +365,17 @@ void PlaygroundRoom::tick() {
             metFloor = true;
             // The plane answers only what drives into it. What is running along
             // it is the point's kinetic energy and friction is what takes that.
+            const double vyBefore = velocity_.y;
             if (velocity_.y < 0.0) velocity_.y = 0.0;
             resting_ = true;
             restingBody_ = -1;
             supportNormal_ = {0, 1, 0};
+            // The plane's answer is a force like any other, and it belongs in the
+            // ledger: the blow that stopped the fall, and the weight it now
+            // carries. Without it a landing shows the speed gone and nothing
+            // that took it.
+            const double impact = kMass * (0.0 - vyBefore) / kTick;
+            addForce(point_, Vec3{0, impact + kMass * kGravity, 0}, ForceKind::Contact, nullptr, kDotOwner);
             slideSpan_ += kTick * remaining;
             continue;
         }
@@ -376,6 +386,8 @@ void PlaygroundRoom::tick() {
         const double into = dot(velocity_, normal);
         if (into < 0.0) {
             hitBody(hitIndex, normal, into);
+            // The body's answer is a force in the ledger, like the plane's.
+            addForce(point_, normal * (kMass * (-into) / kTick), ForceKind::Contact, nullptr, kDotOwner);
         }
         velocity_ = along;
         resting_ = true;
