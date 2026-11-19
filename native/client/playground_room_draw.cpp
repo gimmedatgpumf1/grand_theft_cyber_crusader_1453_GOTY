@@ -141,7 +141,7 @@ const char* kindColour(std::size_t kind) {
 // compared by looking at them. Nothing here is smoothed or capped: a force too
 // small to see is drawn too small to see, which is what it is.
 std::vector<Arrow> forceArrows(const std::array<PlaygroundRoom::ForceSample, PlaygroundRoom::kMaxForceSamples>& forces,
-                               std::size_t count, Vec3 dotShown) {
+                               std::size_t count) {
     std::array<std::size_t, std::size_t(PlaygroundRoom::ForceKind::KindCount)> used{};
     std::vector<Arrow> arrows;
     for (std::size_t i = 0; i < count; ++i) {
@@ -153,17 +153,13 @@ std::vector<Arrow> forceArrows(const std::array<PlaygroundRoom::ForceSample, Pla
         Arrow arrow;
         arrow.kind = kind;
         arrow.slot = used[kind]++;
-        // The dot's forces are drawn at the dot's shown position, not where the
-        // force was recorded: the dot moves during the tick, and the arrows must
-        // track it, not lag behind at the tick-start position.
-        const Vec3 at = (sample.owner == PlaygroundRoom::kDotOwner) ? dotShown : sample.at;
-        arrow.from = at;
+        arrow.from = sample.at;
         // The tip is the tail plus the force itself, scaled: the arrow's direction
         // is the force's direction and its length is the force's amount times one
         // number for the whole room, so 9.8 N is always the same arrow however many
         // forces are on screen and two of them can be compared by eye.
         const Vec3 direction = sample.force * (1.0 / newtons);
-        arrow.to = at + sample.force * kArrowMetresPerNewton;
+        arrow.to = sample.at + sample.force * kArrowMetresPerNewton;
         arrow.neck = arrow.to - direction * (length(arrow.to - arrow.from) * kArrowHeadShare);
         arrow.newtons = newtons;
         arrows.push_back(arrow);
@@ -187,6 +183,13 @@ void PlaygroundRoom::interpolate() {
     const double fraction = !sceneReady_ ? 1.0 : std::clamp(accumulator_ / kTick, 0.0, 1.0);
     const double pointAlpha = pointFrozen_ || dragTarget_ == DragTarget::Point ? 1.0 : fraction;
     shown_ = previous_ + (point_ - previous_) * pointAlpha;
+    // The dot's force arrows are drawn at the dot. The forces were recorded
+    // where the dot was during the tick; the dot is drawn where interpolation
+    // puts it now. Update the ledger positions so the arrows track the dot.
+    for (std::size_t i = 0; i < forceCount_; ++i) {
+        ForceSample& sample = forces_[i];
+        if (sample.owner == kDotOwner) sample.at = shown_;
+    }
     // Each body is interpolated on its own. A frozen body is drawn where it is,
     // but that must never stop a body that is still falling from being spread
     // over the frames: one shared switch here is exactly what made the point
@@ -639,7 +642,7 @@ void PlaygroundRoom::placeMarkers() {
         }
     }
     if (showForces_) {
-        for (const Arrow& arrow : forceArrows(forces_, forceCount_, shown_)) {
+        for (const Arrow& arrow : forceArrows(forces_, forceCount_)) {
             const double drawn = length(arrow.to - arrow.from);
             const double head = drawn * kArrowHeadShare;
             scene_.batches[arrowShaft_[arrow.kind][arrow.slot]].modelMatrix =
@@ -702,7 +705,7 @@ void PlaygroundRoom::appendForceLabels(const Camera& camera, NativeFrame& frame)
         return inView.z > 1e-3;
     };
     char number[64];
-    for (const Arrow& arrow : forceArrows(forces_, forceCount_, shown_)) {
+    for (const Arrow& arrow : forceArrows(forces_, forceCount_)) {
         double x = 0.0, y = 0.0;
         if (!project(arrow.to, x, y)) continue;
         std::snprintf(number, sizeof(number), "%.1f N", arrow.newtons);
