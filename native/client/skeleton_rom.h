@@ -23,9 +23,12 @@ inline std::optional<ReferenceBendRange> referenceBendRange(std::string_view kin
         {"acromioclavicular", {-5, 10}}, // approximation of 15-degree total elevation
         {"radioulnar_pivot", {-80, 80}},
         {"thumb_cmc_saddle", {-15, 35}},
-        {"shoulder_ball_socket", {-30, 120}}, // abduction/adduction at glenohumeral joint
+        {"shoulder_ball_socket", {-60, 120}}, // glenohumeral flexion/extension
+        {"shoulder_abduction", {-30, 120}}, // glenohumeral abduction/adduction
+        {"shoulder_rotation", {-70, 90}}, // internal/external rotation
         {"elbow_hinge", {0, 150}},
-        {"wrist_condyloid", {-70, 80}},
+        {"wrist_condyloid", {-70, 80}}, // flexion/extension
+        {"wrist_deviation", {-20, 30}}, // radial/ulnar deviation
         {"thumb_mcp", {0, 50}},
         {"thumb_ip_hinge", {0, 80}},
         {"finger_mcp_condyloid", {-30, 90}},

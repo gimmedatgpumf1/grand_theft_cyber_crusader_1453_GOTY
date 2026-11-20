@@ -76,10 +76,8 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         const auto parent=rig->parent(node);const auto* joint=rig->joint(node);
         if(!parent || !*parent || !joint || joint->axes().empty() || structure[node]<0 || structure[*parent]<0)continue;
         const std::size_t pi=std::size_t(structure[*parent]),ci=std::size_t(structure[node]);
-        const auto& range=joint->axes()[0];if(!std::isfinite(range.minimum)||!std::isfinite(range.maximum))continue;
         const auto frame=joint_detail::compose(absolute[*parent],joint->parentFrame());
-        const Vec3 sourceAxis=normalized(frameVector(frame,range.direction));
-        Vec3 center=anchor(pi,frame.translation),axis=anchor(pi,frame.translation+sourceAxis*.01)-center;
+        Vec3 center=anchor(pi,frame.translation);
         if(blue)center=(center+anchor(ci,frame.translation))*.5;
         std::optional<MarkedToeBend> toeBend;
         double markedChildLength=0;
@@ -87,34 +85,38 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
             center=mark.pivot;
             markedChildLength=length(mark.childShaft);
             toeBend=markedToeBend(mark.parentShaft,mark.childShaft,mark.dorsal);
-            if(toeBend)axis=toeBend->axis;
-            else if(length(mark.parentShaft)>1e-8) {
-                const Vec3 shaft=normalized(mark.parentShaft),candidate=axis-shaft*dot(axis,shaft);
-                if(length(candidate)>1e-8)axis=candidate;
-            }
             break;
         }
-        const double angle=toeBend ? toeBend->flexion : joint->angles().empty()?0:joint->angles()[0];
-        double minimum=range.minimum,maximum=range.maximum;
-        bool hinge=bool(toeBend) || joint->axes().size()==1;
-        if(length(axis)<1e-8)continue;
-        axis=normalized(axis);
         const Vec3 target=blue?blueCenter[ci]:rawCenter[ci]+origin;
-        Vec3 current=toeBend ? toeBend->current : target-center;current-=axis*dot(current,axis);
-        if(length(current)<1e-8)current=cross(axis,std::abs(axis.y)<.9?Vec3{0,1,0}:Vec3{1,0,0});
-        if(length(current)<1e-8)continue;
-        current=normalized(current);
-        // The untouched B reference can have separated surface marks. Its
-        // attachment gap must not inflate the arc to the size of the foot.
         const double radius=toeBend ? std::clamp(markedChildLength*.55,.006,.025)
                                     : std::clamp(length(target-center)*.55,.006,.075);
         const double width=std::clamp(radius*.07,.0007,.0018);
-        const Vec3 zero=toeBend ? toeBend->neutral : turn(axis,-angle,current);
         const int owner=blue?int(id+pi):int(pi),childOwner=blue?int(id+ci):int(ci);
-        const int segments=std::clamp(int(std::ceil((maximum-minimum)*12)),4,64);
-        const auto radial=[&](double a){return turn(axis,a,zero);};
         arcs.dot(center,std::clamp(radius*.18,.0018,.006),owner);
-        if(maximum-minimum>1e-8) {
+        // Every rotational axis gets its own arc in its own plane.
+        const auto& axes=joint->axes();
+        const auto& angles=joint->angles();
+        for(std::size_t ax=0;ax<axes.size();++ax) {
+            const auto& range=axes[ax];
+            if(!std::isfinite(range.minimum)||!std::isfinite(range.maximum))continue;
+            const Vec3 sourceAxis=normalized(frameVector(frame,range.direction));
+            Vec3 axis=anchor(pi,frame.translation+sourceAxis*.01)-anchor(pi,frame.translation);
+            if(toeBend && ax==0)axis=toeBend->axis;
+            else if(toeBend && length(axis)<1e-8)continue;
+            if(length(axis)<1e-8)continue;
+            axis=normalized(axis);
+            const double angle=(toeBend && ax==0) ? toeBend->flexion
+                             : (ax<angles.size() ? angles[ax] : 0);
+            const double minimum=range.minimum,maximum=range.maximum;
+            if(maximum-minimum<=1e-8)continue;
+            Vec3 current=toeBend ? toeBend->current : target-center;
+            current-=axis*dot(current,axis);
+            if(length(current)<1e-8)current=cross(axis,std::abs(axis.y)<.9?Vec3{0,1,0}:Vec3{1,0,0});
+            if(length(current)<1e-8)continue;
+            current=normalized(current);
+            const Vec3 zero=toeBend ? toeBend->neutral : turn(axis,-angle,current);
+            const int segments=std::clamp(int(std::ceil((maximum-minimum)*12)),4,64);
+            const auto radial=[&](double a){return turn(axis,a,zero);};
             for(int i=0;i<segments;++i) {
                 const double a=minimum+(maximum-minimum)*i/segments;
                 const double b=minimum+(maximum-minimum)*(i+1)/segments;
@@ -123,9 +125,7 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
             for(double end:{minimum,maximum}) {
                 const Vec3 d=radial(end);arcs.stroke(center+d*(radius*.78),center+d*(radius*1.14),axis,width*1.2,owner);
             }
-            // A projected child direction is an angle needle only for a
-            // single-axis joint; other coordinates can change that projection.
-            if(hinge)
+            if(axes.size()==1 || toeBend)
                 needles.stroke(center+current*(radius*.18),center+current*(radius*.91),axis,width*.8,childOwner);
         }
     }

@@ -292,6 +292,18 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axes.push_back({{0,0,side==0 ? 1.0 : -1.0},abduction.extension*toRadians,abduction.flexion*toRadians}); bindAngles.push_back(0);
                     axes.push_back({alignmentAxis,0,3.14159265358979323846}); bindAngles.push_back(0);
                 }
+                if (link.mobility == "shoulder_ball_socket") {
+                    const auto abduction=*referenceBendRange("shoulder_abduction");
+                    const auto rotation=*referenceBendRange("shoulder_rotation");
+                    const Vec3 abdAxis=normalized(cross(axis,down));
+                    axes.push_back({abdAxis,abduction.extension*toRadians,abduction.flexion*toRadians}); bindAngles.push_back(0);
+                    axes.push_back({down,rotation.extension*toRadians,rotation.flexion*toRadians}); bindAngles.push_back(0);
+                }
+                if (link.mobility == "wrist_condyloid") {
+                    const auto deviation=*referenceBendRange("wrist_deviation");
+                    const Vec3 devAxis=normalized(cross(axis,down));
+                    axes.push_back({devAxis,deviation.extension*toRadians,deviation.flexion*toRadians}); bindAngles.push_back(0);
+                }
                 auto joint = CalibratedRotationalJoint::create(parentFrame,frame,axes);
                 if (!joint || !joint->setAngles(bindAngles)) { error = "Invalid source joint " + childName; return false; }
                 body = rig.addJoint(mapping[parent],*joint);
