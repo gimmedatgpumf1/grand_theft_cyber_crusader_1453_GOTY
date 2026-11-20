@@ -44,6 +44,7 @@ public:
     }
 
     void clear() { keys_.clear(); }
+    void reset(Vec3 position, double yaw, double pitch) { clear(); position_=position; yaw_=yaw; pitch_=pitch; }
     bool reverseBend() const { return keys_.count(kKeyShift) != 0; }
     // Momentary modifiers, not a retained selection mode.
     int fingerJoint() const {

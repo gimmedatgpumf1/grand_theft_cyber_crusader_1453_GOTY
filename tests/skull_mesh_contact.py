@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
     temp = Path(temp)
     exe = temp/'export'
     command = shlex.split(os.environ.get('CXX', 'g++')) + [
-        '-std=c++17', '-O2', '-pthread', '-Isrc', '-Inative', '-Inative/vendor/bullet/src',
+        '-std=c++20', '-O2', '-pthread', '-Isrc', '-Inative', '-Inative/vendor/bullet/src',
         'tests/skeleton_cranial_export.cpp', 'native/client/skeleton_room.cpp',
         'native/client/skeleton_body.cpp', 'native/client/skeleton_ragdoll.cpp',
         'native/client/raster.cpp', 'native/client/hud.cpp', 'native/client/ui_layer.cpp',
@@ -65,6 +65,7 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
     subprocess.run(command, cwd=root, check=True)
     # Both pooled girdle curves change throughout 100–190 cm. Exercise actual
     # triangle contacts across that range, not only at its endpoints.
+    cranial_baseline = {}
     for height in (None, 50, 100, 120, 135, 145, 150, 155, 160, 165, 170, 175, 180, 190, 250):
         folder = temp/('default' if height is None else str(height))
         folder.mkdir()
@@ -82,14 +83,27 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
             if height is None:
                 # FCL checks beyond face-normal reversal: disjoint surface
                 # triangles in these averaged bones must not cross each other.
-                for name in ('Pelvis_L','Femur_L','Tibia_L','Scapula_L','Humerus_L','Sacrum','Sternum'):
+                for name in ('Head','Jaw','Pelvis_L','Femur_L','Tibia_L','Scapula_L','Humerus_L','Sacrum','Sternum'):
                     assert not self_crossings(groups['blue'][name]), (sex,name,'self-intersection')
             for other in ('Jaw', 'C1'):
                 white_n, white_gap = contact(groups['white']['Head'][1], groups['white'][other][1])
                 blue_n, blue_gap = contact(groups['blue']['Head'][1], groups['blue'][other][1])
-                assert bool(white_n) == bool(blue_n), (height, sex, other, white_n, blue_n)
+                # The averaged surfaces need not keep a source intersection,
+                # but must remain close and may not introduce an overlap where
+                # the source had none.
                 if not white_n:
-                    assert abs(blue_gap-white_gap*scale) < 1e-7, (height, sex, other, white_gap, blue_gap)
+                    assert not blue_n, (height, sex, other, white_gap, blue_gap)
+                if not blue_n:
+                    assert blue_gap < 0.002*scale, (height, sex, other, white_gap, blue_gap)
+                head_span = np.ptp(groups['blue']['Head'][0][:, 1])
+                key = (sex, other)
+                if height is None:
+                    cranial_baseline[key] = (bool(blue_n), blue_gap/head_span)
+                else:
+                    baseline_contact, baseline_gap = cranial_baseline[key]
+                    assert bool(blue_n) == baseline_contact, (height, sex, other, blue_n)
+                    if not blue_n:
+                        assert abs(blue_gap/head_span-baseline_gap) < 1e-7, (height, sex, other, blue_gap)
                 print(f'{sex} {height or "default"} Head/{other}: source {white_n}, blue {blue_n}; '
                       f'gaps {white_gap*1000:.3f}/{blue_gap*1000:.3f} mm')
             for first, second in (('Jaw', 'C2'), ('Jaw', 'C7'), ('Head', 'C7')):
@@ -157,16 +171,16 @@ with tempfile.TemporaryDirectory(prefix='gtc-cranial-') as temp:
                             n,gap=contact(blue[first],blue[second])
                             assert not n and gap<0.015*max(1,height/170), (height,dimension,multiplier,sex,first,second,n,gap)
     print('Bilateral slider joint surface sweep: PASS (selected joints, both sexes)')
-    # Audit every paired source-side mesh plus the two reconstructed axial
-    # bones for new disjoint triangle self-crossings, not only the pelvis.
+    # Audit every paired source-side mesh and reconstructed axial bones,
+    # including skull and jaw, for disjoint triangle self-crossings.
     all_folder=temp/'all-bones'; all_folder.mkdir()
     subprocess.run([str(exe),str(all_folder),'--all'],cwd=root,check=True)
     for sex in ('male','female'):
         files=sorted(all_folder.glob(f'{sex}_blue_*.obj'))
-        assert len(files)==79, (sex,len(files))
+        assert len(files)==105, (sex,len(files))
         for path in files:
             source=all_folder/path.name.replace('_blue_','_white_',1)
             old=self_crossings(mesh(source)); new=self_crossings(mesh(path))
             assert len(new)<=len(old), (sex,path.name,'new self-intersection',len(old),len(new))
-    print('Bilateral source-surface self-intersection audit: PASS (79 parts per sex)')
+    print('Bilateral source-surface self-intersection audit: PASS (105 parts per sex)')
 print('Cranial and pelvic triangle-surface comparison: PASS (source Sacrum/L5 overlaps remain)')

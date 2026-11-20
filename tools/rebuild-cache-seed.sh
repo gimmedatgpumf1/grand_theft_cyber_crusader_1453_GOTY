@@ -9,7 +9,9 @@ trap 'rm -f "$TEMP" "$BACKUP"' EXIT
 if [ -f "$SEED" ]; then cp "$SEED" "$BACKUP"; fi
 rm -rf "$ROOT/.cache/ccache"
 rm -f "$SEED"
-if ! "$ROOT/build.sh"; then
+# Both builds: the game's ten units and the client's sixty-one. Seeding only the
+# first left every client build cold, which is where nearly all of the time went.
+if ! "$ROOT/build.sh" || ! bash "$ROOT/native/build.sh"; then
   if [ -f "$BACKUP" ]; then cp "$BACKUP" "$SEED"; fi
   echo '[cache] Build failed; previous seed restored.' >&2
   exit 1

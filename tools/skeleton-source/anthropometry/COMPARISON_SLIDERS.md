@@ -12,18 +12,36 @@ Press **P** to open or hide the comparison controls. Press **Esc** to release
 the cursor, drag a track or click its minus/plus buttons, and click outside the
 panel to resume looking. Select male or female; **Reset** affects that copy.
 For a very short/narrow window the footer switches between the two groups of
-four sliders. Values shown are centimetres. Head, neck, torso, arm, leg, hip
-and shoulder sliders are multipliers of the appropriate sex-specific
-height-based surface estimates. Minus/plus adjusts them by 2 percentage points;
-the height buttons change the target by 1 cm. Tracks are convenient windows
-(40–230 cm for height, 50–150% for other dimensions), **not** minimum/maximum
-height cutoffs: buttons may go beyond them. Positive finite dimensions are
-required. The listed values are the **fitted skeletal proxies**. When a rigid
-pelvic ring cannot meet both requested torso and leg proxies, both controls
-still move the copy; the fit is projected to the closest pair of achievable
-values with equal weight. On a wide panel the footer shows fitted/requested
-values for those dimensions. If a fit cannot be produced at all, the previous
-shape is kept. Reset restores the original posed height and formula requests.
+four sliders. Values shown are centimetres. Each size slider is centered on
+the sex-specific formula at the current height and ranges from that value
+minus 1.5 sample SD to plus 1.5 sample SD. The SDs are calculated separately for
+male and female from **all nonblank values** of each whole-body TSV column;
+see `BODY_SIZE_STANDARD_DEVIATIONS.tsv`. These are pooled over all heights,
+not SDs conditional on height. The head column contains circumference-based
+estimates and some other columns include historical proxies, so the ranges are
+not validated biological percentiles. Source cohorts are mixed US populations,
+not verified Indo-European. See `WHOLE_BODY_HEAD_DATA.md`.
+
+Minus/plus adjusts size by 0.1 SD and height by 1 cm. Height cannot be set
+below 50 cm; the plus button can go above the track's 230 cm upper end. If
+the formula value minus 1.5 SD is non-positive, the slider has a small positive
+floor: negative or zero dimensions cannot be rendered. The listed values are **fitted skeletal
+proxies**. When a rigid pelvic ring cannot meet both requested torso and leg
+proxies, both controls still move the copy; the fit is projected to the closest
+pair of achievable values with equal weight. On a wide panel the footer shows
+fitted/requested values. The ±1.5 SD bounds apply to requested slider values;
+the fitted skeletal torso or leg can fall outside them when the intact pelvic
+ring cannot satisfy both requests. At very short arm requests, the arm's fixed
+endpoint offsets can also make the fitted chord longer than requested. Fitted
+values do not impose an additional slider restriction. Reset restores the
+default height and formula requests for the selected sex. Height changes keep
+the current SD offsets where feasible.
+
+To regenerate the SDs (sample SD, `n-1` denominator) from the original rows:
+
+```sh
+python3 tools/skeleton-source/openskeleton/29-comparison-sd.py
+```
 
 The blue copies request the seven sex-specific equations supplied by King, with
 height `h` and each result in cm. Male:
@@ -42,7 +60,7 @@ These are used directly as requested targets before applying the sliders. The
 male and female leg equations become non-positive at or below approximately
 11.83 and 12.25 cm respectively, and the exponentials eventually overflow or
 produce widths incompatible with the pose: such inputs cannot be displayed and
-the prior shape is preserved. There is no additional stature cutoff. For
+the prior shape is preserved. The minimum stature is 50 cm. For
 example at 170 cm the rigid ring projects the requested torso/leg values of
 64.58/87.83 cm to approximately 63.70/86.96 cm. At 50 cm it projects
 22.14/21.19 cm to approximately 17.33/16.38 cm. The other five targets match
@@ -54,12 +72,12 @@ All are visual skeletal proxies, not clinical validation.
 
 ## What is measured
 
-The default height is the *visible posed mesh* from floor to skull top, so each
-blue copy has the same visible height as its neighbouring original. This is
-about **172.68 cm male** and **166.26 cm female**, not the recorded 170.0 and
-170.2 cm cadaver lengths. All seven formula targets are evaluated at that
-visible height. Changing height intentionally breaks the same-height comparison
-until reset. The tested geometric proxies on the blue mesh are:
+The blue copies default to **172.2 cm male** and **159.4 cm female**, measured
+from floor to skull top. All seven formula targets are evaluated at the selected
+height. Reset returns each copy to its sex-specific default. The unscaled
+originals have visible posed heights of approximately 172.68 cm male and
+166.26 cm female, distinct from their recorded cadaver lengths of 170.0 and
+170.2 cm. The tested geometric proxies on the blue mesh are:
 
 | Slider | Fitted skeletal proxy | Surface dimension represented in the source data |
 |---|---|---|
@@ -90,12 +108,15 @@ shared similarity transform, including after slider changes.
 
 `tests/skull_mesh_contact.py` also compares the actual source and blue triangle
 surfaces with FCL. The registered T-pose already has head–jaw intersections in
-both originals and head–C1 intersections in the female original; the blue copies
-retain these, rather than hiding them by moving the original jaw or neck. In this
-static audit, FCL reports 96 male and 65 female head–jaw contacts, and 112 female
-head–C1 contacts; male head–C1 surfaces are approximately 0.034 mm apart. Counts depend on the
-mesh and collision algorithm. At 50 cm, FCL also checks that C1/C2 contact
-remains and no new jaw/C2, jaw/C7 or head/C7 surface intersections appear.
+both originals and head–C1 intersections in the female original. Averaging the
+blue skull and jaw changes those surfaces but does not fix the existing
+intersections. At default height FCL reports 96/106 source/blue male head–jaw
+contacts, 65/36 female head–jaw contacts, and 112/114 female head–C1 contacts.
+The male head–C1 gap is approximately 0.034 mm in the source and 0.261 mm in
+the blue copy. Counts
+depend on the mesh and collision algorithm. The test also
+checks for disjoint triangle self-crossings, C1/C2 contact and unwanted
+jaw/C2, jaw/C7 or head/C7 intersections over the tested height range.
 The audit also checks the pelvic ring, hips and sacrum/L5 at default, 50, 100, 170 and 250 cm.
 Source pelvis/femur intersections are no longer reproduced in the audited blue
 copies: the two symmetric pelvic halves, sacrum and femoral surfaces have small
@@ -119,9 +140,67 @@ pelvis the horizontal and depth scales stay constant rather than tapering with
 height, preserving straight vertical joint-centre lines. This is an
 approximate bilateral *mesh* mean, not a vertex-by-vertex anatomical mean or a
 population average. Both rendered sides have identical reflected triangles.
-The central sacrum and sternum are similarly averaged, clipped at the midline
-and mirrored with a welded seam. The skull, jaw and remaining central bones
-retain their source shapes, so exact whole-body surface symmetry is not claimed.
+The central sacrum and sternum are averaged, clipped and mirrored with a welded
+seam. Before reflecting the male sacrum, its off-axis coccyx tip is centred with
+an X-only adjustment that fades smoothly into the lower sacrum; otherwise the
+single source tip becomes two mirrored tips. This changes only the blue male
+mesh, not the female copy or either original. The skull uses a separate midplane
+fitted **only to its own source mesh**;
+hip and other body landmarks do not determine it. The same skull-derived plane
+is used for the jaw, with no separate jaw-centroid alignment. The complete
+three-axis skull frame follows the head's rigid T-pose rotation. The surfaces
+are averaged and mirrored in that frame. Afterwards the complete blue skull and
+jaw are rotated and centered together on the common upright body plane, without
+using the hips to estimate the original skull plane. The skull, jaw and C1
+retain their shared cranial scale transform.
+`45-fit-skull-midplane.py` first voxelizes each Head's selected outer surface at
+1.5 mm isotropic resolution. It searches for the best reflection-plane match
+against the 3D voxel distance field, varying two plane angles and the plane's
+offset with multiple initial guesses. The initial search direction is the
+scan's approximate left/right axis; it does not use hips or body landmarks.
+The robust, smoothed squared-distance objective drops from 6.532 to 2.876 mm²
+for the male and from 10.942 to 2.891 mm² for the female. Estimated orbit
+centres are independent diagnostics, not inputs to the fit.
+
+Only the geometrically selected outward-visible triangle subset is voxelized:
+outward-facing faces with clear outward-normal and radial rays. Unreferenced
+vertices are removed before voxelization so internal triangles cannot add
+voxels. The source meshes are not watertight; this conservative selection may
+omit exterior concavities or misclassify faces near openings. It is not a
+guaranteed anatomical segmentation, and the voxel fit is not proof of an ideal
+anatomical midline.
+
+After the voxel fit, the skull and jaw meshes are averaged and mirrored about
+the plane. They are then rigidly rotated together and centered along X so their
+symmetry plane coincides with the common upright body plane; the skull's shape
+and the skull–jaw coupling are preserved. Instead of relying only on the nearest opposite point from each
+vertex, the averaging also projects reflected vertices back onto the template
+triangles, distributing their area-weighted midpoint contributions using
+barycentric coordinates. This lets details on the opposite side contribute even
+where the retained side has fewer vertices. The match also uses interpolated
+surface normals, reducing matches to nearby, oppositely facing walls. Head
+vertices on selected outer triangles match the reflected selected outer
+triangles, not the inner walls; other Head vertices and Jaw use their full
+opposite surfaces. No global smoothing is used; local displacement that would
+reverse a face or introduce a disjoint self-intersection is reduced. The masks
+are stored per source Head triangle and regenerated and checked by the fitting
+script (which requires NumPy, SciPy, trimesh, rtree and embreex). These are
+geometric correspondences, not proven anatomical landmarks or a clinical
+reconstruction.
+
+Each C1–C7, T1–T12 and L1–L5 source mesh is also fitted independently to its
+own reflected surface voxels at 1 mm resolution (`46-fit-vertebra-midplanes.py`).
+Unlike the skull fit, this uses the whole vertebral surface. Each blue copy is
+averaged and mirrored in its own fitted 3D frame, then rigidly rotated and
+centered along X to share the upright body plane. C1 retains the shared
+skull/jaw scale. For the other vertebrae, a cached profile-dependent plane
+approximates the surrounding body field; the retained half follows that field
+and the other is reflected, with the normal distance controlled to prevent
+crossing the symmetry plane. Some source-specific rigid offsets preserve
+selected adjacent-joint clearances; selected rib pairs also move outwards in X.
+The 77 paired and 28 axial parts now share one geometric mirror plane in the
+neutral blue comparison. This is not a clinical reconstruction or proof of
+symmetry in articulated poses.
 
 The pelvic halves and sacrum then use one uniform 3D transform at each slider
 setting, maintaining the fitted ring. Source-specific fits for the sacrum, hip/leg and scapula were made to these
@@ -143,9 +222,12 @@ they were not obtained from a population sample or clinical joint limits.
 The regression runs the pelvic and selected limb/shoulder triangle checks for
 both sexes at default, 50, 100, 170 and 250 cm and at the ends of the arm,
 hip and shoulder tracks at 50, 170 and 250 cm. It also compares disjoint
-triangle self-crossings in all 77 paired left templates and the two axial
-reconstructions against the original source meshes. A non-intersection result
-for these surfaces is not a containment or whole-body joint test.
+triangle self-crossings in all 77 paired left templates and 28 axial
+reconstructions against the original source meshes. A separate FCL audit checks
+all 23 adjacent vertebra pairs at 50, 170 and 250 cm, plus selected individual
+slider extremes at 170 cm; previously overlapping pairs can still overlap.
+A non-intersection result for these surfaces is not a containment or whole-body
+joint test.
 
 The skull, jaw and C1 also share a uniform transform. The torso field meets it
 at the bottom of C1. The jaw may overlap C7 in height because it is anterior

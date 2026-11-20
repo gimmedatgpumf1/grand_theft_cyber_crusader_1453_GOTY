@@ -10,6 +10,8 @@ while IFS= read -r -d '' FILE; do
   if [ "$LINES" -gt 1000 ]; then
     printf '[NAGGER] %s has %s lines. Split it, you absolute landfill.\n' "${FILE#"$ROOT"/}" "$LINES" >&2
     FAILED=1
+  elif [ "$LINES" -ge 750 ]; then
+    printf '[NAGGER] %s has %s lines. Time to split or I will spit!\n' "${FILE#"$ROOT"/}" "$LINES" >&2
   fi
 done < <(find "$ROOT" -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.sh' -o -name '*.ps1' -o -name '*.cmd' -o -name '*.py' \) -print0)
 if [ "$FAILED" -eq 0 ]; then

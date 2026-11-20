@@ -32,7 +32,7 @@ layout(set = 0, binding = 0) uniform Frame {
 // per vertex and travels in the normal field, which an indexed batch leaves
 // empty because its normal belongs to the triangle.
 layout(std430, set = 0, binding = 2) readonly buffer Bones {
-    mat4 bone[512];
+    mat4 bone[1024];
 } bones;
 
 layout(push_constant) uniform Batch {
@@ -52,7 +52,11 @@ void main() {
     // extra.y is a run: the whole skeleton in one draw call, its matrices read
     // out of the array above instead of one push block per bone.
     vec4 world = batch.model * vec4(inPosition, 1.0);
-    if (batch.extra.y > 0.5) world = bones.bone[int(inNormal.x + 0.5)] * vec4(inPosition, 1.0);
+    if (batch.extra.y > 1.5) {
+        vec4 first = bones.bone[int(inNormal.x + 0.5)] * vec4(inPosition, 1.0);
+        vec4 second = bones.bone[int(inNormal.y + 0.5)] * vec4(inPosition, 1.0);
+        world = mix(second, first, clamp(inNormal.z, 0.0, 1.0));
+    } else if (batch.extra.y > 0.5) world = bones.bone[int(inNormal.x + 0.5)] * vec4(inPosition, 1.0);
     gl_Position = frame.projection * world;
     outWorld = world.xyz;
     // A batch with no texture is drawn with a pipeline that carries no texture
@@ -73,15 +77,28 @@ void main() {
     // extra.x is an indexed batch: its vertices are shared between faces and
     // carry no normal, so the lighting is done per fragment from the triangle
     // itself. Six times fewer vertices to fetch, no matrix work here at all.
-    if (batch.extra.x > 0.5) return;
+    if (batch.extra.x > 0.5 && batch.extra.z < 0.5) return;
 
     // The normal takes the rotation part of the model matrix, which is what
     // model * vec4(normal, 0) does. flags.z says the matrix is rigid -- a bone
     // is a rotation and a translation -- in which case the result is already
     // unit length and the square root below is a million of them a frame spent
     // to change nothing.
-    vec3 normal = mat3(batch.model) * inNormal;
-    if (batch.flags.z < 0.5) normal = normalize(normal);
+    vec3 normal;
+#ifndef NO_UV
+    if (batch.extra.z > 0.5) {
+        vec2 oct = inTexCoord;
+        vec3 n = vec3(oct, 1.0 - abs(oct.x) - abs(oct.y));
+        if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * mix(vec2(-1.0), vec2(1.0), greaterThanEqual(n.xy, vec2(0.0)));
+        n = normalize(n);
+        normal = normalize(mix(mat3(bones.bone[int(inNormal.y + 0.5)]) * n,
+                               mat3(bones.bone[int(inNormal.x + 0.5)]) * n, clamp(inNormal.z, 0.0, 1.0)));
+    } else
+#endif
+    {
+        normal = mat3(batch.model) * inNormal;
+        if (batch.flags.z < 0.5) normal = normalize(normal);
+    }
 
     // Two-sided lighting: a normal that points away from the eye is turned
     // round, exactly as the CPU rasterizer and the OpenGL shader do, so a back

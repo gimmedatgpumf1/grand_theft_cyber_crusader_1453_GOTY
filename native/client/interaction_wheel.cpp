@@ -102,9 +102,9 @@ void drawInteractionWheel(NativeFrame& frame, const InteractionWheelLayout& layo
     const int hovered = pointerX < 0 || pointerY < 0 ? kWheelOutside
                                                      : interactionWheelHit(layout, pointerX, pointerY);
 
-    const Color ink = colorHex(kInkColour), muted = colorHex(kMutedColour);
-    const Color accent = colorHex("#d7ff54"), cancel = colorHex("#ff7a5e");
-    const Color shell = colorHex(kPanelColour);
+    const Color ink = colorHex(hexRgb(kInkColour)), muted = colorHex(hexRgb(kMutedColour));
+    const Color accent = colorHex(hexRgb("#d7ff54")), cancel = colorHex(hexRgb("#ff7a5e"));
+    const Color shell = colorHex(hexRgb(kPanelColour));
 
     // The disc, filled a row at a time: one fill per run of the same sector, so
     // the whole circle costs a few hundred fills and its edges are exactly radial.

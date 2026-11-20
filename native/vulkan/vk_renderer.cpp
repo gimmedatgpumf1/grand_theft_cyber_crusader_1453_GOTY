@@ -236,7 +236,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
             firstVertex_[index] = running;
             firstUv_[index] = coordinates;
             running += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
-            if (texturedMaterial(scene.batches[index].material)) {
+            if (hasVertexUv(scene.batches[index])) {
                 coordinates += static_cast<std::uint32_t>(scene.batches[index].vertices.size());
             }
         }
@@ -351,24 +351,32 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
     // costs a validation-and-write per draw.
     VkDescriptorSet boundTexture = VK_NULL_HANDLE;
     fillBones(scene);
-    for (std::size_t index = 0; index < scene.batches.size(); ++index) {
+    // Opaque scene first, translucent skin over it, then the interface.
+    for (int pass=0;pass<3;++pass) for (std::size_t index = 0; index < scene.batches.size(); ++index) {
         const GpuBatch& batch = scene.batches[index];
-        if (batch.vertices.empty()) continue;
+        const bool transparentSkin=batch.blendedSkin && batch.smoothSkin && batch.material.opacity<0.999;
+        const bool transparent=transparentSkin || batch.translucent;
+        const bool overlay=batch.isUi || batch.isOverlay;
+        if (batch.vertices.empty() || (pass==0 && (overlay || transparent)) ||
+            (pass==1 && (!transparent || overlay)) || (pass==2 && !overlay)) continue;
         const bool textured = texturedMaterial(batch.material);
-        if (batch.isUi) {
+        const bool vertexUv = hasVertexUv(batch);
+        const bool localIndexed = vertexUv && !batch.indices.empty() && !batch.isUi;
+        if (batch.isUi || localIndexed) {
             const VkDeviceSize base = static_cast<VkDeviceSize>(firstVertex_[index]) * sizeof(PackedVertex);
             bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &base);
         }
         const VkDescriptorSet textureSet = textureSets[index] != VK_NULL_HANDLE ? textureSets[index] : white_.set;
-        if (textured) {
+        if (vertexUv) {
             // The coordinates of this batch, and only this batch: a body that
             // samples nothing has eight bytes fewer per vertex to fetch.
             const VkDeviceSize uvOffset = static_cast<VkDeviceSize>(firstUv_[index]) * sizeof(UvVertex);
             bindVertexBuffers(command_, 1, 1, &uv_.buffer, &uvOffset);
         }
-        const VkPipeline wanted = batch.isUi
-            ? (textured ? (covered ? pipelineInterfaceUvCovered_ : pipelineInterfaceUv_) : (covered ? pipelineInterfaceCovered_ : pipelineInterface_))
-            : (textured ? (covered ? pipelineUvCovered_ : pipelineUv_) : (covered ? pipelineCovered_ : pipeline_));
+        const VkPipeline wanted = transparent ? (vertexUv ? (covered ? pipelineSkinCovered_ : pipelineSkin_) :
+            (covered ? pipelineTranslucentCovered_ : pipelineTranslucent_)) : overlay
+            ? (vertexUv ? (covered ? pipelineInterfaceUvCovered_ : pipelineInterfaceUv_) : (covered ? pipelineInterfaceCovered_ : pipelineInterface_))
+            : (vertexUv ? (covered ? pipelineUvCovered_ : pipelineUv_) : (covered ? pipelineCovered_ : pipeline_));
         if (wanted != boundPipeline) {
             bindPipeline(command_, VK_PIPELINE_BIND_POINT_GRAPHICS, wanted);
             boundPipeline = wanted;
@@ -413,6 +421,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         // triangle, not to the vertex, so the fragment stage derives it.
         const bool indexed = !batch.indices.empty();
         push.extra[0] = indexed ? 1.0f : 0.0f;
+        push.extra[2] = batch.smoothSkin ? 1.0f : 0.0f;
         // A run of rigid batches goes out as one call: the vertex stage reads
         // each vertex's matrix out of the bone array, so fifty-six draws become
         // one. Every batch in the run is pushed with the same colour, which is
@@ -421,7 +430,7 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
                              ? std::find_if(runs_.begin(), runs_.end(),
                                             [&](const BatchRun& candidate) { return candidate.first == index; })
                              : runs_.end();
-        push.extra[1] = run != runs_.end() ? 1.0f : 0.0f;
+        push.extra[1] = batch.blendedSkin ? 2.0f : (run != runs_.end() || batch.vertexSkinned) ? 1.0f : 0.0f;
         pushConstants(command_, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(PushConstants), &push);
         if (run != runs_.end()) {
@@ -430,11 +439,13 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
         } else if (indexed) {
             const std::uint32_t count = index < indexCount_.size() ? indexCount_[index] : 0;
             if (count == 0) continue;
-            drawIndexedFn(command_, count, 1, firstIndex_[index], 0, 0);
+            drawIndexedFn(command_, count, 1, firstIndex_[index],
+                          localIndexed ? -static_cast<std::int32_t>(firstVertex_[index]) : 0, 0);
         } else {
             drawFn(command_, static_cast<std::uint32_t>(batch.vertices.size()), 1,
                    batch.isUi ? 0 : firstVertex_[index], 0);
         }
+        if (localIndexed) bindVertexBuffers(command_, 0, 1, &vertex_.buffer, &offset);
     }
     endRenderPass(command_);
 
@@ -630,128 +641,5 @@ bool Renderer::draw(const GpuScene& scene, NativeFrame& frame) {
 }
 
 } // namespace detail
-
-namespace {
-
-detail::Renderer& instance() {
-    static detail::Renderer renderer;
-    return renderer;
-}
-
-// Set once the owner has asked for shutdown. Nothing may start the device again
-// after that, which is what keeps a closed window from drawing into a dead
-// renderer.
-bool closed = false;
-
-// One small frame through the whole path before the window commits to this
-// backend. A device that cannot finish a 32x24 frame cannot finish a 1568x929
-// one either, and finding that out here keeps the session alive on the backend
-// that does work.
-bool selfTest() {
-    detail::Renderer& renderer = instance();
-    GpuScene scene;
-    scene.width = 32;
-    scene.height = 24;
-    scene.focal = 30;
-    scene.revision = 1;
-    scene.background = {0.0, 0.0, 0.0};
-    GpuBatch batch;
-    batch.revision = 1;
-    const float vertices[9] = {-0.4f, -0.4f, -2.0f, 0.4f, -0.4f, -2.0f, 0.0f, 0.4f, -2.0f};
-    for (int index = 0; index < 3; ++index) {
-        GpuVertex vertex;
-        vertex.x = vertices[index * 3 + 0];
-        vertex.y = vertices[index * 3 + 1];
-        vertex.z = vertices[index * 3 + 2];
-        vertex.nz = -1.0f;
-        batch.vertices.push_back(vertex);
-    }
-    scene.batches.push_back(batch);
-    NativeFrame frame;
-    // This frame is read, not shown: the check below is about the pixels. A
-    // presented frame never has any, and asking for one through the swapchain
-    // was how the whole backend failed its own test and fell back to OpenGL.
-    frame.wantPixels = true;
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        if (!renderer.draw(scene, frame)) {
-            std::fprintf(stderr, "[vk] self test frame %d failed\n", attempt);
-            tracef("vk: self test frame %d failed", attempt);
-            return false;
-        }
-        const std::size_t pixels = static_cast<std::size_t>(frame.width) * frame.height;
-        if (frame.width != 32 || frame.height != 24 || frame.rgb.size() < pixels * 3 ||
-            frame.alpha.size() < pixels) {
-            std::fprintf(stderr, "[vk] self test broke the frame contract (%dx%d, rgb %zu, alpha %zu)\n",
-                         frame.width, frame.height, frame.rgb.size(), frame.alpha.size());
-            trace("vk: self test frame broke the frame contract");
-            return false;
-        }
-    }
-    trace("vk: self test passed");
-    return true;
-}
-
-} // namespace
-
-bool vulkanAvailable() {
-    if (closed) return false;
-    static bool tried = false;
-    static bool available = false;
-    if (!tried) {
-        tried = true;
-        available = instance().start();
-        if (available && !selfTest()) {
-            // The backend that draws this machine's frames failed its own first
-            // frame. That is the fault to look at, so nothing else runs.
-            std::fflush(stdout);
-            std::fprintf(stderr, "[vk] self test failed; the Vulkan backend is broken, not the machine\n");
-            std::fflush(stderr);
-            std::abort();
-        }
-        tracef("vk: available=%d", available ? 1 : 0);
-    }
-    return available;
-}
-
-bool renderVulkanScene(const GpuScene& scene, NativeFrame& frame) {
-    if (!vulkanAvailable()) return false;
-    if (instance().draw(scene, frame)) return true;
-    // No rebuild-and-retry. A frame that will not draw is the fault; rebuilding
-    // the device over it is how the fault goes unread for another week.
-    std::fflush(stdout);
-    std::fprintf(stderr, "[vk] frame failed\n");
-    std::fflush(stderr);
-    std::abort();
-}
-
-void setFrameReadback(bool enabled) { detail::readbackEnabled = enabled; }
-
-void setReadbackMemory(int mode) {
-    if (detail::readbackMode == mode) return;
-    detail::readbackMode = mode;
-    instance().discardTargets();
-}
-
-void setLinearTarget(bool enabled) {
-    if (detail::linearTarget == enabled) return;
-    detail::linearTarget = enabled;
-    // The existing targets were built for the other layout.
-    instance().discardTargets();
-}
-
-void setVulkanSurfaceTarget(void* windowHandle, int kind) {
-    detail::Renderer& renderer = instance();
-    renderer.setSurfaceTarget(windowHandle, kind);
-}
-
-void drainVulkan() {
-    detail::Renderer& renderer = instance();
-    renderer.drain();  // a no-op when the device was never created
-}
-
-void shutdownVulkan() {
-    closed = true;
-    instance().stop();
-}
 
 } // namespace gtc::native

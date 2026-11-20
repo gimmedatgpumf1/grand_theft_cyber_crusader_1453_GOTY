@@ -1,5 +1,19 @@
 # Joint movement reference for the OpenSkeleton graph
 
+## V-view joint limits
+
+Press V in the skeleton room to show red joint markers. Red arcs and their end
+marks depict the configured **first rotational coordinate** and its bounds;
+the pale radial needle is shown only for a hinge. Other coordinates of a
+multi-axis joint are not depicted, and an arc is not a full anatomical limit
+surface. The white-skeleton joint balls are fitted visual proxies; the smaller red
+points and arcs use the rig's joint anchors and are drawn through bones for
+visibility. In R physics mode, arcs follow the
+parent body and hinge needles follow the child on the GPU; joints merged into a
+single rigid body and positional-only connections have no angular arc. These
+are runtime constraints, not patient-specific measurements or injury limits.
+The visualization does not edit the B reference skeleton or its source pose.
+
 The table below classifies **every one of the 209 relationships** in
 `04-line-graph.py`; `openskeleton/joint_mobility.py` assigns the class from the
 actual source labels, including each finger and toe on both sides. The graph
@@ -141,29 +155,14 @@ alignments, not measurements of individual neutral joint angles. Each whole
 body is translated down to the floor. Heel, medial sesamoid and lateral
 metatarsal support points define each sole; the pelvis is levelled against
 both feet while hip and trunk compensation preserves straight legs and spine.
-`R` starts gravity-driven ragdolls for both subjects; pressing it again restores the
-T-pose. `B` stops the simulation and returns the original source pose. Bullet 3.25
-uses bone-derived convex collision proxies and a shared floor/world, not exact
-CT-surface collision. Rib proxies are split along the source-derived arc instead
-of filling the space inside each curved rib. Fixed tree structures share rigid
-bodies; each radius/ulna pair also shares a compound body, as in the existing
-grouped forearm model, so individual radioulnar rotation is not simulated.
-Linked carpal groups in each palm likewise share a rigid compound body rather
-than simulating individual carpal glides. Thumb and finger bones remain separate
-hinged bodies with their own collision proxies and bounded angular motion. A
-post-substep correction keeps their hinge anchors together during impacts by
-moving the physics bodies as well as their visible meshes. This correction can
-temporarily push a finger proxy into the floor or another collider during hard
-contact; Bullet resolves contacts in subsequent steps. This is stabilization,
-not a model of hand ligaments or clinically validated hand dynamics.
-Subject-specific rib/sternum and neighbouring-rib links inferred from the
-anatomical graph are retained as limited-displacement positional constraints;
-their attachment locations are approximate, because the source has no cartilage.
-Other joints use fitted pivots and bounded hinges, with approximate three-axis
-hip and shoulder constraints. Neighbouring or initially overlapping proxies
-are filtered to avoid joint-contact conflicts; other bones and the two figures
-can collide. This is a game-physics approximation, not a validated biomechanical
-simulation.
+`R` starts gravity-driven Vulkan ragdolls for all four figures; pressing it
+again restores the T-pose. `B` stops the simulation and returns the original
+source pose. Bone-derived sphere proxies approximate collision; they are not
+exact CT surfaces. Fixed tree structures share rigid bodies; each radius/ulna
+pair and linked carpal groups are grouped rather than simulating individual
+glides. Neighbouring or initially overlapping proxies are filtered to avoid
+joint-contact conflicts; other bodies can collide. This is game physics, not a
+clinically validated biomechanical simulation.
 Meshes use rigid bone matrices; V-view vertices are associated
 with explicitly named source structures or declared anatomical groups and are
 rebuilt only after pose changes. Forearm radius and ulna share elbow motion and a
@@ -215,20 +214,12 @@ A fixed source-to-neutral alignment is kept separate from flexion so the
 original CT pose can be restored. Interactive flexion clamps to the cited range.
 The same palm-relative convention is mirrored for left and right; it does not
 replace either subject's source bone geometry.
-Toe reference directions use the actual neighbouring joint locations, rather
-than principal axes of the often nearly round distal phalanges. MTP, PIP/IP and
-DIP reference alignment is separate from bounded toe flexion; positive flexion
-moves toward the sole. The resting pose uses each toe's source vertices and
-joint pivots to select bounded flexion toward the heel's support plane. A
-separate source-to-reference yaw aligns each toe with the foot in the ground
-plane, without turning plantar flexion into an abduction control. The large
-toe's source shaft is also aligned; for the smaller, nearly round phalanges,
-the relative bone centres provide a more stable direction than PCA. If
-straightening the source phalanges would put a toe below the sole, its source
-joint frames are retained and the bounded hinges are flexed instead. Resting IP
-flexion is capped at 20° (the controls still allow the full range). These are
-geometric pose estimates, not measured clinical resting angles. All 28 joints per subject are tested individually in
-mesh and V view, and the source pose is restorable.
+For toes with complete user marks, the marked bone shafts provide adjacent
+segment directions and their marked endpoints define surface attachments.
+Where marks are incomplete, the older geometric reference is retained. Positive
+flexion moves toward the sole. The original B pose remains the CT reference;
+standing and blue fitting are geometric approximations, not subject-specific
+clinical measurements.
 Wrist flexion uses the palm direction; ankle plantarflexion uses the grouped
 foot direction relative to the shin. Hip flexion lifts the thigh forward and
 hip axial rotation has a separate approximate ±45° range. Hip abduction is
@@ -247,13 +238,75 @@ extension are not necessarily symmetric. See [cervical segmental ranges](https:/
 [atlanto-occipital and atlanto-axial cadaver review](https://squareonephysio.com.au/wp-content/uploads/2021/08/Bogduk-2000-Biomechanics-Cervical-Spine.pdf),
 [AC joint motion](https://www.kenhub.com/en/library/anatomy/acromioclavicular-ac-joint),
 and [SC motion](https://www.kenhub.com/en/library/anatomy/sternoclavicular-joint).
-The lesser toe PIP range is 0–35° and DIP is −30–60° ([OrthopaedicsOne](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/));
-great toe IP flexion is about 50° ([reference](https://physical-therapy.us/range-of-motion-rom/)).
+For toe extension, the present bounds are great-toe MTP 70° and IP 0°;
+lesser-toe MTP 40°, PIP 0° and DIP 30°, each relative to its own neutral
+joint frame, not a total angle of the entire toe. The lesser-toe values follow
+[OrthopaedicsOne's passive examination ranges](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/);
+the great-toe MTP estimate is within the [QUT teaching reference's 70–90° expected range](https://podiatry-anatomy-app.qut.edu.au/content/joints/1st-mtp-joint-rom.html).
+A [clinical motion table](https://book.physiotutors.com/content/ankle-and-foot-assessment/basic-assessment-of-the-ankle-and-foot/active-range-of-motion-arom-of-the-ankle-and-foot/)
+reports the same extension figures. These are general references, not measured
+limits for the CT subjects, and passive limits do not imply that all joints
+normally reach their maxima together. Whole-toe extension therefore lifts at
+MTP and returns a flexed lesser DIP toward neutral, rather than automatically
+hyperextending that DIP as well. Individual joint control still permits its
+separate 30° bound. The joint-axis and neutral-frame estimates are approximate,
+not validated anatomical measurements.
+The runtime's sagittal ranges (extension to plantar flexion) are: great MTP
+−70° to +45°, great IP 0° to +90°, lesser MTP −40° to +40°, lesser PIP
+0° to +35°, and lesser DIP −30° to +60°. These are general non-weightbearing
+references, not limits measured on either CT subject. The [lesser-toe
+examination](https://www.orthopaedicsone.com/orthopaedicsone-articles-lesser-toe-joints-passive-range-of-motion/)
+and [foot ROM table](https://www.physio-pedia.com/Lower_Extremity_Range_of_Motion)
+report those IP and MTP figures; the latter distinguishes them from active
+motion, for which it lists IP extension to neutral. Different sources and
+individuals vary. Loaded motion and coupled tendon effects are not modelled.
 
-This remains a **partial** implementation: a single-axis tree cannot represent
-all three-dimensional ball-joint motion, pronation/supination with both
-radioulnar articulations, translation, coordinated scapular rhythm, closed loops,
-ligament constraints, cartilage, collision-free motion, or subject-specific
+For complete user-marked toe shafts, the neutral for each displayed hinge is
+the adjacent marked parent shaft projected into the foot's sagittal plane;
+positive motion is toward the sole. The registered CT pose is not treated as
+zero flexion. Re-expressing the standing joint coordinate does not move the
+bones, and B retains its original source geometry and pose. V and R use
+the blue feet's mapped, mirrored marked shafts independently. A pre-existing
+marked pose outside the general interval is left as-is; white keyboard motion
+can recover it toward the interval without snapping, while the R solver enforces
+the limits. Non-physics blue toe motion is reconstructed from each standing
+parent/child frame using only one bounded hinge coordinate per MTP or IP joint.
+Retargeted translation and off-axis swing are not applied to the joint; missing
+or degenerate marks freeze the joint in its standing frame. Both blue sides use
+the same coordinate, and distal bones follow their parent. This deliberately
+restricts the MTP to a hinge in this view even though real MTP joints also have
+limited abduction/adduction. If a saved standing pose is already outside a
+reference interval, its initial angle is preserved rather than forcing it into
+range. Motion can recover toward the interval, and the outward allowance shrinks
+as it recovers, rather than letting it extend past the recovered angle again.
+Restoring or editing the reference resets that allowance.
+
+In R mode, one graph-wide reconstruction applies the configured hinge and
+bounded multi-axis coordinates to every rotational link after contact solving,
+including the first displayed frame. It reconstructs child anchors from their
+parent frames rather than leaving off-axis swing or anchor gaps to the
+iterative solver. Positional closure links are checked as well; if a proposed
+pose exceeds a closure limit, motion along the corresponding graph paths is
+backtracked, with the last accepted pose retained as a numerical fallback.
+The inferred rib/sternum cartilage links use the previous room model's ±4 mm
+local displacement approximation, not subject-fitted cartilage measurements.
+The graph reconstruction takes priority over inter-body collision separation;
+a whole-island floor lift prevents projected floor-proxy penetration, but
+inter-body penetration may remain until a later contact pass. These constraints
+are applied to GPU floating-point precision, and the XYZ multi-axis model has
+an Euler singularity at a 90-degree middle angle. Floor support is re-evaluated
+after the whole-island projection; the sleep transition keeps that joint-valid
+pose rather than correcting individual bodies again. This does not solve the
+reported long-term floor instability: positional corrections still feed the
+velocity update and can create nonphysical motion. The floor response and joint
+velocity constraints need further work; stable settling is not established.
+Toe hinge axes remain estimates from the marked shafts and dorsal direction,
+not measured clinical axes.
+
+This remains a **partial** implementation: the present joint model cannot represent
+all anatomical joint motion, pronation/supination with both radioulnar
+articulations, coordinated scapular rhythm, deformable cartilage and ligaments,
+collision-free motion, or subject-specific
 neutral and limits. Some source links are redundant in the spanning tree and
 some small bones intentionally grouped. It should not be described as every
 joint working or medically validated.

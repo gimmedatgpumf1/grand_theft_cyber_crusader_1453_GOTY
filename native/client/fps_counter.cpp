@@ -70,8 +70,8 @@ void drawFpsCounter(NativeFrame& frame, double framesPerSecond) {
     // Transparent, not opaque: the world stays visible through it at half
     // strength, which is what a HUD strip is for. The overlap of the panel and
     // the picture is the only thing that makes it readable over a bright floor.
-    frame.blendRectangle(layout.left, layout.top, layout.width, layout.height, colorHex("#05090b"), 0.5);
-    drawTextPixels(frame, layout.textLeft, layout.textTop, text, colorHex("#f2f7ea"), pixelHeight);
+    frame.blendRectangle(layout.left, layout.top, layout.width, layout.height, colorHex(hexRgb("#05090b")), 0.5);
+    drawTextPixels(frame, layout.textLeft, layout.textTop, text, colorHex(hexRgb("#f2f7ea")), pixelHeight);
 
     frame.uiScale = previousScale;
     frame.uiOffsetX = previousOffsetX;

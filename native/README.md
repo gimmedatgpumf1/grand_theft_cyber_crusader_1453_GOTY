@@ -1,10 +1,14 @@
 # Native C++ runtime and portrait fitter
 
-The native path is C++17 and offline-only. It does not start a browser, execute JavaScript, use Chromium, or download runtime assets.
+The native path is C++20 and offline-only. It does not start a browser, execute JavaScript, use Chromium, or download runtime assets.
 
 - `gtc-native-client` connects to the authoritative server and renders its replicated world in a resizable landscape window that opens at **640×480**.
 - `gtc-native-smoke` runs two real networked citizens through replication, customization, movement, pathfinding, and toilet-action checks.
 - `gtc-native-fit` is the portrait fitting and review tool; it does not call a landmark detector during optimization.
+
+`gtc-native-smoke` and `gtc-native-fit` are built by `native/build.sh`. `native/build.cmd` -- the
+Windows build -- produces `gtc-native-client.exe` only; the two tools are not part of it, because
+they are run on the machine that develops the physics and rendering, not on the one that plays.
 
 ## Build
 
@@ -14,13 +18,13 @@ Linux (ccache is selected through the repository's content-hash configuration):
 ./native/build.sh
 ```
 
-Windows with Visual Studio 2022 and the **Desktop development with C++** workload:
+Windows with Visual Studio 2022 or newer, and the **Desktop development with C++** workload:
 
 ```cmd
 native\build.cmd
 ```
 
-`native/build.ps1` is the PowerShell wrapper. The command uses `vswhere`/`vcvars64.bat` to find MSVC v143. Linux executables are retained under `prebuilt/linux-x86_64/` with `prebuilt/NATIVE_SHA256SUMS`.
+`native/build.ps1` is the PowerShell wrapper. The command initializes the Visual Studio environment when available and uses `/std:c++20`; the compiler reports unsupported options and errors directly. Linux executables are retained under `prebuilt/linux-x86_64/` with `prebuilt/NATIVE_SHA256SUMS`.
 
 ## Native multiplayer client and smoke test
 
@@ -139,3 +143,315 @@ The preserved browser implementation is a legacy checkpoint only. Native network
 ## Vendored decoder
 
 `native/vendor/stb_image.h`, `stb_image_write.h`, and `stb_truetype.h` are from `nothings/stb`, commit `003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5`. stb is dual-licensed under MIT or public domain; see `native/vendor/README.md`. These third-party headers are exempt from the authored-file line nagger. `native/assets/ui-sans.ttf` is unmodified DejaVu Sans; its Bitstream Vera/DejaVu redistribution notice is retained in `native/assets/FONT-LICENSE.txt`.
+
+### P: one point, one plane, one tick
+
+The physics rebuild starts from the smallest case that can be checked by eye.
+Press P to enter the room, R to drop the point again, and hold the left mouse
+button to move the point. The world contains one point with a mass of 1 kg and
+one plane at y = 0.
+
+- The only time step is the 20 Hz tick: one twentieth of a second. A velocity of
+  v metres per second carries the point v/20 metres in a tick.
+- Gravity is 9.8 m/s² downwards, so the force is m·g and the acceleration is
+  F/m. The point's speed changes by that acceleration each tick; nothing else
+  sets its velocity.
+- Before the point is allowed to travel, the segment from where it is to where
+  that speed would take it is walked. If the segment meets the plane, the point
+  stops at the crossing. At 100 km/s one tick covers 5 km and the point is still
+  stopped by the plane, because the plane is found before the step is taken.
+- While the point rests on the plane, the plane pushes back with the point's
+  weight, exactly cancelling gravity, so the net force is zero and the
+  acceleration is zero. That is why the point stays put instead of sinking.
+- A faint dot marks the position at each past tick, so the 20 Hz cadence and the
+  shrinking gaps between ticks are visible. The blue line is the current tick's
+  trace; it ends where the point was allowed to reach.
+- Physics stays at 20 Hz and the screen is not: each frame draws a moving body
+  between the position it had at the previous tick and the position the last
+  tick left it in, at the fraction of a tick that frame has reached. The trace
+  is drawn across the same two positions, so the point on screen always sits on
+  the line that was walked. This is Minecraft's partial-tick interpolation; it
+  changes only what is drawn, never what is simulated.
+- Each body decides this for itself. A frozen body is drawn exactly where it is,
+  and the body the mouse is holding is drawn exactly where the mouse put it, but
+  neither of those may switch the interpolation off for anything else.
+
+### The bodies: points at corners
+
+There are two solids in the room, and they are the same thing at different
+sizes: a body is a set of corner points of equal mass, 1 kg each, plus the
+distances between those points that are not allowed to change. Nothing in the
+room asks which body it is looking at, so both go through one piece of code.
+
+- The cube: a 0.70 m square made of four points, one at each corner. Six
+  distances are held -- four edges and two diagonals -- because a square can fold
+  into a diamond without the diagonals.
+- The triangle: a right isosceles triangle with two 2.10 m legs and a 2.97 m
+  hypotenuse, made of three points, one at each corner. That is three times the
+  cube's side, exactly as asked. It stands on its two base corners, and a
+  triangle is already rigid with its three edges, so it holds three distances.
+
+- Each corner gets gravity on its own and is asked to travel its own v/20.
+- Each corner traces its own segment against the plane before it is allowed to
+  move, so there is one hitscan per corner, not one per body.
+- When one corner moves, the others are affected through the distances that are
+  not allowed to change. Every distance is pushed back to its original length,
+  splitting the error between its two corners, with the plane clamp applied
+  between passes so satisfying a distance cannot push a corner through the
+  floor.
+- A corner the plane is holding cannot be pushed down into it, so any distance
+  that wants to move such a corner downwards puts that motion into the corner at
+  the other end instead. It is still free to slide along the floor. Sharing the
+  correction equally instead is what lets a tall body balance in mid-air on a
+  corner the floor cannot carry.
+- The distances are swept forwards and then backwards every pass. Pushing them
+  back in one fixed order lets the order itself move the body, and over a second
+  that steady lean adds up.
+- A corner the plane is holding cannot still be travelling into it, so its
+  downward speed is removed at the end of the tick.
+- A body is frozen only when its weight passes between the corners that are
+  touching the floor, so nothing is ever frozen balanced on a single corner.
+
+The shape is not approximated. Each tick, the distances and the plane are
+solved together -- push the distances straight, put any corner that went through
+the plane back on it, check both again -- until neither is out by more than a
+nanometre. The order matters: the plane is what opens the distance error, so the
+distance solve has to see the plane. What is drawn is then rebuilt from where the
+body is and how far round it has turned, never by sliding four corners along
+straight lines between ticks, so a turning body cannot look squashed. A corner the plane holds loses its
+downward velocity, and a constraint is not allowed to hand a corner more speed
+than it already had, so the push-back and the plane cannot pump energy into a
+body. The worst distance error measured across every run is 0.00000 mm.
+
+### Friction
+
+A contact answers only the motion that goes into the surface. Everything running
+along the surface is the body's own kinetic energy, and it is friction that
+takes it away -- as a force, over time, never in an instant. Deleting the
+sideways velocity at the moment of contact is not a contact, it is an energy
+sink, and it made a dot that had been accelerated down a slope by gravity stop
+dead the instant it touched the floor.
+
+Two coefficients, as asked:
+
+- Static: a surface holds a body still while `mu_s * N` is enough to answer the
+  pull on it. Below that, nothing moves at all.
+- Kinetic: once it is sliding, `mu_k * N` takes speed away tick by tick,
+  `v -= mu_k * g * dt`.
+
+`N` is the part of the weight the surface carries, so a 45 degree face grips less
+than the floor does and the point keeps most of the speed it built falling. A
+surface answers only the force that drives into it: the rest still acts on the
+point, so on a slope there is a real force down the slope and the point
+accelerates down it at `g * sin(theta)`. Static friction holds a point still only
+while it is being pushed weakly enough and is not already moving; on a 45 degree
+face `mu_s * N` is nowhere near enough, so it slides, and that is the whole
+difference between sliding and creeping. The
+point is smooth: `mu_s` 0.40, `mu_k` 0.30, so it runs a long way and then stops.
+Each solid carries its own pair, 0.70 and 0.55, and that coefficient is scaled by
+the length of the contact it actually has with the floor -- a body standing on a
+longer footprint grips proportionally harder. Friction on a solid is applied to
+the body, not to each corner: the floor has already pinned the corners it holds,
+so rubbing them one at a time does nothing at all.
+
+Measured: the dot slides off the triangle at 4.8 m/s and keeps it, running
+another 1.45 m along the floor before friction stops it; a dot pushed at 0.10 m/s
+moves 7 mm and is held, one pushed at 3 m/s slides 1.76 m. A 12 m/s strike moves
+the cube 43 mm and the taller triangle only 33 mm, and neither slides on
+afterwards.
+
+### Freezing
+
+A body with no velocity and no net force is frozen and not stepped at all. The
+tick still counts, since it has already passed, but there is no force, no
+motion and no contact work for a frozen body. Freezing also ends the drawing
+interpolation for that body, so a frozen body is drawn exactly where it is
+instead of part of the way along a tick. R resets; dragging the point wakes it.
+
+### The point and the bodies
+
+Before the point travels, its segment is walked against every body's edges as
+well as the plane, and whichever it reaches first is where it stops. A hit on a
+body exchanges momentum: the point carries m·v, the corner it struck
+takes half of the impulse and the other three corners share the rest, so the
+square as a whole gains exactly what the point loses and is set turning by the
+uneven share. The square pushes back along the face normal and takes the whole
+approach speed, giving none of it back -- the same thing the plane does to the
+point. Nothing bounces off anything in this room: a contact stops what ran into
+it and passes the momentum on.
+
+A point that has spent its speed on a body sits on the face that stopped it,
+exactly where it would sit on the plane, and freezes there on the same rule:
+no velocity, no net force. It is held up by the square and by nothing else, so
+taking the body away -- dragging it out from under the point, or letting it
+slide -- drops the point back into free fall. A drop onto the plane and the same
+drop onto a flat face give the same trace: the falling speed builds tick by tick
+and the last tick ends at rest, not at a bounce.
+
+The impulse goes along the contact normal, not straight down. A dot dropped from
+a great height has all of its momentum pointing down, but the face it land on
+turns that into a push along the normal: onto the triangle's 45 degree face it
+leaves at exactly -45 degrees, along the face, and the face is pushed the other
+way. A body standing on the plane cannot be pushed down into it, but the plane
+only answers the part of the blow that drives into it -- the part that runs
+along the plane has to go into the body. That is why a drop on the triangle
+shoves the triangle sideways instead of being swallowed by the floor.
+
+A body whose face is flat and horizontal is a different matter: the whole blow
+drives straight down into the plane, the plane answers all of it, and the body
+does not move -- which is the same reason it does not hop. A drop from 20 m onto
+the square's top face moves the square 0.0000 mm; the same drop onto the
+triangle's slope moves it 81 mm sideways at the impulse, and hitting a corner of
+the square moves the square 25 mm sideways.
+
+The tick's travel is walked from contact to contact: the segment is tested
+against every body and the plane, the point is moved to the first thing it
+meets, that contact is answered, and it carries on with the time that is left,
+for up to four contacts. Nothing is passed through however fast the point goes,
+and it never loses speed it did not spend on a contact. A point left a hair
+inside a body is put back onto the nearest point of its boundary rather than
+nudged out along an edge, because nudging leaves it a centimetre deep and it
+creeps along the inside of the face it is stuck in.
+
+What is left of a tick after a contact is walked with the speed the contact left
+behind. That is what lets the point run down the triangle's 45 degree face
+instead of being parked at the contact and creeping, and the walk stops at
+anything it runs into, so nothing is passed through.
+
+Because the crossing is found before the point moves, none of this depends on
+how fast the point was going. A point arriving at 100 km/s is stopped at the
+surface in the same tick.
+
+### The ball
+
+A basketball is in the room too: 0.24 m across, 0.62 kg, drawn as one disc. It is
+not built from corner points like the solids and nothing is sampled on its
+surface -- it is one point with a radius, and that radius is all the shape it
+has. There is one piece of ball code and no shape is named anywhere in it: the
+cube and the triangle are the same two-or-more-sided outline, and both are met by
+the same test.
+
+- A contact is found before the ball moves, and the test is exact. A flat side is
+  met where the ball's own surface would reach it, so the side is looked at one
+  radius further out and not where the ball's middle would cross it; a corner is
+  met when the middle is one radius from it. Both cases cover a circle against a
+  polygon completely, so nothing is stepped or guessed. A ball that is already
+  touching a side when the tick starts is still meeting it, and a ball whose
+  surface is already past a side is answered by how far it is through that side
+  itself -- the distance to the edge, not to its line, so the far side of a
+  triangle never answers for the slope the ball is rolling on.
+- There is no pass afterwards that pushes the ball out of anything. The sweep
+  decides where the ball may go; a ball found through a solid can only be one that
+  something else was driven into, and it is put back by exactly the amount it is
+  through, along that surface's own normal. The mouse cannot put the ball inside a
+  solid at all: a spot its circle does not fit in is a spot it cannot be put down.
+- A body's corners and sides are held out of the ball in the same solve that holds
+  them out of the floor, so a cube coming down on a ball stops on its surface
+  instead of being pushed out of it later.
+- The bodies are stepped first, and their travel is not predicted. A body's
+  corners move in straight lines within a tick, so once the bodies have moved,
+  what they did is known exactly and the ball's own sweep is tested against it.
+  This is what finds a body coming down on a ball that is lying still: a ball
+  that is not going anywhere has no travel of its own to find anything with. The
+  sweep is run whichever of the two is awake.
+- Both sides stop where they met. The crossing says how far along its own step the
+  meeting was, and the body is put back there, so the two shapes are touching and
+  not one inside the other. Without that a body landing on a ball that has a floor
+  under it sinks in and stays sunk.
+- The contact point is where the two shapes touch -- a ball on a face is one radius
+  in from its middle -- so a body struck in the middle of a face is pushed and not
+  turned, and one struck near a corner turns. The blow is shared as a solid's
+  would be: every corner of the body moves together, the struck side taking the
+  push and the whole turning about the middle. A body is one rigid shape, so a
+  contact can never set one corner moving faster than the others.
+- A body lying at rest is a solid until something really hits it. It answers as
+  the floor does and nothing wakes it below a nanometre a second, which is the
+  same rest level the room uses everywhere; waking it with a hair of a contact and
+  then discarding the momentum it took was a pump that made a ball roll out from
+  under a cube faster and faster.
+- The floor and the ball are the two things in the room nothing gets through, and
+  a body's own solve holds its corners out of both. A ball under a body coming down
+  on it has nowhere to go downwards, so the body is the one that is put right --
+  lifted onto the ball's surface -- and the lift is taken out of the body's step as
+  well, so it is a correction and never read back as a jump. Across the drops in
+  `scratch/base.cpp` -- the ball down the slope from two dozen heights, a ball
+  dropped onto the triangle's apex and onto its foot, the cube onto a resting ball
+  from twelve heights and off centre by ten more, the dot onto a ball -- the
+  deepest overlap measured is 0.000000001 m, the rounding allowance the test itself
+  uses. The one case still out is a cube that tips over onto the ball while the
+  floor is under both: the tipped side crosses the ball between its own corners,
+  which no corner test sees, and that reads 0.07 m on the worst tick.
+- Neither side can take an answer the other has no freedom to give. A body on the
+  floor cannot be driven down into it, a ball lying on the floor cannot give way
+  under a load coming down on it, and what a surface does not answer is answered
+  by the other side -- which is what lets a ball carry the cube instead of being
+  squeezed out from under it.
+- The ball turns as well as travels. Friction acts at the bottom of the ball, one
+  radius from its middle, so the same force that slows it also spins it: the
+  moment of inertia of a solid sphere is `0.4 * m * r^2`, and the grip is limited
+  by `mu * N` like everywhere else. The spin is not assumed: a ball dropped flat
+  skids, the skid drives the spin up, and the turn becomes the travel. Rolling
+  down the slope gives `-8.37` radians per metre against `-1/r` of `-8.333`, and
+  across a whole run the ratio stays inside 4 percent of it.
+- Rolling is not skidding, and it has its own law: `F = Crr * N`, the rolling
+  resistance force, with `Crr` a property of the pair of surfaces (0.010 for this
+  rubber on this floor). It acts through the same lever as friction, so a rolling
+  ball slows and its turn slows with it and it goes on rolling; it is not a switch
+  and it says nothing about what speed anything has. A ball rolled across the
+  floor at 3.4 m/s is still rolling 20 seconds later at 1.1 m/s, not stopped.
+- The turn is drawn, not simulated into: what the screen is shown is interpolated
+  between ticks, and that is kept apart from the angle the simulation has turned
+  through. Writing it back used to divide every tick's turn by the number of
+  frames inside it, so at 300 FPS the ball turned a fifteenth of the way it rolled
+  and the seams looked nailed on.
+- A ball touches things all the way round. A body lying on a ball is touching the
+  ball's top; the ball on top of the cube is touching the cube's face; a ball
+  resting exactly on a face is at the surface and not outside it, so that counts
+  as touching too. There is no preferred side in the code.
+- Bouncing is the answer to arriving at something that will not give way: the
+  floor, a frozen solid, a body the mouse is holding. The ball gives back 0.75 of
+  the speed it arrived with -- the speed it arrived at the tick with, before this
+  tick's gravity, so a ball already lying on the floor arrives at nothing and is
+  pressed into it rather than dropped onto it. Against something free to move,
+  there is no bounce: the two exchange momentum, which is the only way two things
+  stepped one after the other stay consistent. Nothing else in the room bounces.
+- Air acts on it: `0.5 * rho * Cd * A * v^2` against the direction of travel, with
+  a sphere's drag coefficient. A ball rolling at 3.4 m/s is down to 3.1 m/s two
+  seconds later, and a hard knock decays instead of rolling out of the room for
+  ever.
+- Rest needs no rule. A ball with nothing left to spend is frozen: no speed, and
+  every surface under it able to carry its weight. A slope cannot carry it, so a
+  ball on one is never frozen however slowly it is going, and a ball with a face
+  coming down on it is not at rest either.
+- `R` puts a fresh ball back where it started, and `R` is where the ball starts:
+  0.28 m up, dropped, bouncing and coming to rest at exactly its radius.
+
+Rolling down the slope and onto the floor, the ball reaches 3.44 m/s, keeps
+turning at `-8.37` radians per metre, and is still rolling at 0.81 m/s a minute
+later, 90.8 m away.
+
+Measured: 5.27 m/s onto the floor rebounds at 3.95 m/s, three quarters of it; a
+ball dropped from 3 m bounces 21 times, peaks at 1.696 m, and is at rest at
+0.1200 m after 2.55 s, still at 0.120000 m ten seconds later; a ball dropped on
+the cube's top rests at 0.820 m (0.700 of cube plus 0.120 of ball); the dot
+dropped on a resting ball rests on it at 0.310 m, both frozen; the cube set down
+on the ball is carried by it, its own corners 0.240 m up -- the ball's top -- and
+clear of the floor; rolling off the triangle's slope into the cube's side moves
+the cube by 7 mm and stops the ball; the closest approach between the ball and
+any body in every one of those runs is 0.0000 m, meaning touching and never
+inside.
+
+### Grabbing
+
+The left mouse button takes whatever is under the ray: the point, the cube, the
+triangle or the ball. A click near the point takes the point even when it is sitting
+on a body, so it can always be picked up off a face. A body is taken by its
+middle, so all of its corners move by the same amount and none of the distances
+it is made of are asked to stretch; it is placed rather than simulated while it
+is held, and released with no velocity. Dragging the point still moves only the
+point.
+
+The room draws through the same Vulkan backend as everything else. Body
+positions reach the device as batch model matrices, so nothing is uploaded or
+read back per frame. There is one tick per 20 Hz interval and no hidden extra
+update.

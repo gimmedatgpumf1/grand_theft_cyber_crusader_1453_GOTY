@@ -210,6 +210,12 @@ public:
     // neutral (shoulders use abduction, elbows and knees use flexion); this method cannot establish that calibration from a CT pose.
     // Returns false if the rig or a cited bend range is unavailable.
     bool setReferenceBend(std::size_t link, double degrees);
+    // Compose a rigid reference correction in world coordinates. This moves
+    // the intact toe and its descendants, not the original CT vertices.
+    bool adjustReferenceToe(std::size_t link,const JointRigidTransform& correction);
+    bool repositionReferenceToeJoint(std::size_t link,Vec3 pivot);
+    bool orientReferenceToeJoint(std::size_t link,Vec3 shaft);
+    bool calibrateReferenceToeBend(std::size_t link,Vec3 axis,double angle);
     // Preserve an individual toe's source frame when straightening it would
     // push its proximal bone through the standing sole.
     bool setReferenceToeAlignment(std::size_t link, bool enabled) {

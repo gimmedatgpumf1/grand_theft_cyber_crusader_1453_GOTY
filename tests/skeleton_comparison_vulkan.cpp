@@ -6,6 +6,7 @@
 #include "vulkan/vk_renderer.h"
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 using namespace gtc::native;
@@ -54,6 +55,24 @@ int main() {
             int d=0;for (int c=0;c<3;++c)d+=std::abs(int(picture[i+c])-int(before[i+c]));if(d>24)++changed;
         }
         std::printf("Vulkan %s head slider: %d changed pixels\n",male?"male":"female",changed);assert(changed>20);
+    }
+    // Exercise real pointer drags after another slider has been changed.
+    // Verify both the requested endpoint and pixels from the actual blue mesh.
+    for (int dimension:{SkeletonComparison::Hip,SkeletonComparison::Torso}) {
+        const auto before=picture;
+        const int row=dimension%4, column=dimension/4;
+        const double x=10+column*470+370, y=333+59+row*27+1;
+        WindowEvent down{WindowEvent::Type::MouseDown};down.button=1;down.x=x;down.y=y;
+        WindowEvent up{WindowEvent::Type::MouseUp};up.button=1;up.x=x;up.y=y;
+        assert(controls.handle(down,false,view.width,view.height,room));
+        assert(controls.handle(up,false,view.width,view.height,room));
+        const auto bounds=room.comparison(true).dimensionLimits(dimension,room.comparison(true).profile().height);
+        assert(bounds && std::abs(room.comparison(true).requestedTargets()[dimension]-bounds->maximum)<1e-8);
+        room.render(frame,view,0,&camera);
+        int changed=0;for (std::size_t i=0;i<picture.size();i+=4) {
+            int d=0;for(int c=0;c<3;++c)d+=std::abs(int(picture[i+c])-int(before[i+c]));if(d>24)++changed;
+        }
+        std::printf("Vulkan sequential slider %d: %d changed pixels\n",dimension,changed);assert(changed>20);
     }
     room.toggleLineView();room.render(frame,view,0,&camera);
     assert(frame.interfaceInFrame && contributions.size()==4 && contributions[0]>30 && contributions[1]>30 && contributions[2]>30 && contributions[3]>30);

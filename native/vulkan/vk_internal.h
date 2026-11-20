@@ -91,9 +91,9 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
 
 // Rigid batches sharing a material use one draw. Their matrices ride in a
 // storage buffer instead of one push block per draw, and each indexed vertex
-// carries its matrix slot in the otherwise-unused normal field. 512 slots fit
-// both 182-structure source bodies; past this ceiling runs are drawn singly.
-constexpr std::size_t kBatchSlots = 512;
+// carries its matrix slot in the otherwise-unused normal field. 1024 slots fit
+// all four skeletons and their toe attachments; larger runs are drawn singly.
+constexpr std::size_t kBatchSlots = 1024;
 constexpr VkDeviceSize kSlotBlock = kBatchSlots * 16 * sizeof(float);
 // Both uniform and storage descriptor offsets are aligned to 256 bytes.
 constexpr VkDeviceSize kSlotOffset = 256;
@@ -153,6 +153,10 @@ inline bool texturedMaterial(const Material& material) {
         case Material::Kind::Textured: return true;
         default: return false;
     }
+}
+
+inline bool hasVertexUv(const GpuBatch& batch) {
+    return batch.smoothSkin || texturedMaterial(batch.material);
 }
 
 inline bool isColourFormat(VkFormat format) {
@@ -371,7 +375,6 @@ private:
 
     bool surfaceRequested() const { return wsiHandle_ != nullptr && wsiKind_ != 0; }
 
-
     template <class Function>
     bool resolve(Function& slot, const char* name) {
         slot = reinterpret_cast<Function>(getInstanceProcAddr_(instance_, name));
@@ -553,6 +556,10 @@ private:
     VkPipeline pipelineUvCovered_ = VK_NULL_HANDLE;
     // The same four again, blended and without depth: the interface, drawn by the
     // device over the scene instead of composited on the host afterwards.
+    VkPipeline pipelineSkin_ = VK_NULL_HANDLE;
+    VkPipeline pipelineSkinCovered_ = VK_NULL_HANDLE;
+    VkPipeline pipelineTranslucent_ = VK_NULL_HANDLE;
+    VkPipeline pipelineTranslucentCovered_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterface_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterfaceCovered_ = VK_NULL_HANDLE;
     VkPipeline pipelineInterfaceUv_ = VK_NULL_HANDLE;
@@ -588,6 +595,7 @@ private:
         }
     };
     std::vector<GeometryStamp> geometryStamps_;
+    std::vector<GeometryStamp> nextGeometryStamps_;
     const GpuScene* geometryScene_ = nullptr;
     std::size_t dirtyBatch_ = 0;
     bool uploadedValid_ = false;

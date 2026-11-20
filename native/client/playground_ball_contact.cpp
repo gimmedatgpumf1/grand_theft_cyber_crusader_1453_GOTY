@@ -1,0 +1,752 @@
+#include "client/playground_ball_shape.h"
+#include "client/playground_shapes.h"
+#include "client/playground_room_tick.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+
+namespace gtc::native {
+using namespace ball_shape;
+using namespace playground_detail;
+
+// Can this surface hold the ball still where it is?
+//
+// The question is not "can friction hold a point there". A ball is not a point: a
+// point on a slope is held by friction, and a ball on the same slope rolls away,
+// because the thing that has to be stopped is a *roll* and friction along the
+// surface cannot stop one -- the bottom of a rolling ball is not moving, so there is
+// no slip for it to answer. What stops a roll is the couple the ground's own squash
+// can supply, M = Crr * N * r, and a ball on a slope of angle a needs N * r * tan(a)
+// of it to stay put. So the surface holds the ball when
+//
+//     tan(a) <= Crr,        a little over two degrees,
+//
+// and the friction cone (mu_s = 0.70, thirty-five degrees) is a much weaker
+// condition that never decides anything on its own. Asked with the cone alone, a ball
+// put down on a ten degree ramp was declared able to stay on it and did -- and a
+// basketball does not: it rolls off, and the room has one coefficient that says so.
+bool holdsBall(Vec3 normal) {
+    const double level = std::max(0.0, normal.y);
+    const double along = std::sqrt(std::max(0.0, 1.0 - level * level));
+    return kBallStaticFriction * level >= along && kBallRollingResistance * level >= along;
+}
+
+void PlaygroundRoom::ballContact(Ball& ball, Vec3 normal, int bodyIndex, Vec3 contactPoint, double depth,
+                                bool exchange, bool resting, double reached, bool instantaneous) {
+    Rope& rope = ropeForBall(static_cast<std::size_t>(&ball - balls_.data()));
+    Body* body = bodyIndex >= 0 ? &bodies_[std::size_t(bodyIndex)] : nullptr;
+    // What the ball was doing before this surface answered it. When the call is
+    // done, the difference is the momentum the surface took from it or gave it,
+    // which is the force the ball's arrows are drawn from -- recorded where the
+    // two met, because that is where it acts.
+    const Vec3 ballBefore = ball.velocity;
+    const double spinBefore = ball.spin;
+    // The body's side is written by giveBodyTurn, which is the call that hands it
+    // over.
+    // The ball's *turn* is written here; its speed is written further down, as the
+    // pair of blows that changed it. A blow is one force at one place, and the ball
+    // is the one thing in the room that is pressed from two sides at once: what hit
+    // it, and what is holding it up. Written as a single net push it reads as a
+    // force with no partner, which is what a conjured force looks like.
+    const auto recordBall = [&]() {
+        // And the turn it took, as the couple that turned it. A blow off the middle
+        // of the ball changes its spin as well as its speed, and a blow is a force
+        // whose moment is the arm it lands on -- so if the spin changed, the moment
+        // that did it belongs in the ledger too, or the picture adds up in a straight
+        // line and not about the middle.
+        const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
+        const double turned = inertia * (ball.spin - spinBefore) / kTick;
+        if (std::abs(turned) > 1e-9) addCouple(contactPoint, turned, Vec3{}, ForceKind::Ball, ownerOf(ball));
+    };
+    Vec3 answer = normal;
+    bool canMove = false;
+    // The blow this shape gives the ball, as an impulse along the way out of the
+    // shape. Every contact is two blows at one place, and both of them belong on
+    // screen: this is the shape's, and it is written even when the ball does not
+    // move under it -- because something under the ball did.
+    Vec3 blown = {};
+    // A body at rest is not stepped, and what it is not stepping it cannot give
+    // either. Letting it take a share of the ball's momentum and then discarding
+    // that share is not a contact, it is a pump: the ball keeps more speed than a
+    // solid surface would leave it and ends up rolling under whatever is on top of
+    // it faster and faster. So a resting body answers as the solid it is, and a
+    // real blow wakes it -- which is the only thing that should ever move a body
+    // that had come to rest.
+    if (body != nullptr && body->frozen) {
+        // A body asleep is a body the ball can wake, and only a real blow does it:
+        // what the two are closing at, along the normal they met on.
+        //
+        // What a body feels is the ball's *surface* at the place the two meet, and the
+        // surface is the centre's speed plus the turn's: a rolling ball whose middle is
+        // going somewhere has a contact patch that is standing still. Read as the
+        // middle's speed, a ball rolling gently against a sleeping shape closed on it at
+        // twice the speed its rim actually has, and woke it -- the shape then spent the
+        // next tick being pushed, the ball was rolled a little further by the shape, and
+        // the pair of them kept each other awake for as long as the room was left alone.
+        // Measured in the King's corner: a ball settling at 5e-5 m/s of roll woke the
+        // triangle 1800 times out of 1800.
+        //
+        // And a blow is *closing*. It used to be either direction -- `abs()` of the
+        // closing speed -- and that is a shape woken by a ball that is moving away
+        // from it, which is not a blow and not a contact either. It is the loop the
+        // King's corner could not get out of: the triangle freezes at the end of the
+        // shapes' half, the ball's own half sees it moving at five hundredths of a
+        // millimetre a second relative to it -- in the direction that is *separating*
+        // -- wakes it for the blow, and the pair are solved against each other again
+        // on the next tick, which pushes the ball, which moves it, which wakes the
+        // triangle. Measured: the triangle went to sleep and was woken again 1800
+        // times in 1800 ticks and never spent a second asleep, so its weight was
+        // answered against the ball's mass once per tick and the ball crept for ever.
+        // A contact that is not approaching cannot push anything.
+        //
+        // A blow is *travel*, and not the ball's whole speed: a ball on a taut rope
+        // carries a tick of fall the rope takes back. A turn is not travel either -- a
+        // patch spinning along a face only rubs. And a body is woken by what the ball
+        // *brought*: read at `arrival`, a ball at rest brings nothing. See ballOffTheRope().
+        const Vec3 incoming = instantaneous ? ball.velocity : ball.arrival;
+        const Vec3 closingVelocity = ballOffTheRope(ball, incoming) - pointSpeed(*body, contactPoint);
+        if (dot(closingVelocity, normal) < -kRestSpeed) body->frozen = false;
+    }
+    if (body != nullptr) {
+        // The ball's contact is answered by the body's own mass and its lever about
+        // the body's centre -- the same law every other contact in the room
+        // follows, at the place the two of them actually met. A body the mouse is
+        // carrying has nowhere to go, and neither has one that is asleep until a
+        // real blow wakes it.
+        answer = (bodyHeld(std::size_t(bodyIndex)) || body->frozen) ? Vec3{} : normal;
+        canMove = dot(answer, normal) > 1e-9;
+    }
+    // What the body's step was before anything below shortens it. A corner's stored
+    // velocity is not the body's motion -- the floor cuts it, and a shortened step
+    // is not motion either -- so the step is read here, once, and used from here on.
+    //
+    // It is the speed *where the surfaces touch*, not the body's average speed: a body
+    // tipping over a ball has one edge standing still and the other going twice as
+    // fast as the middle, and the piece between the corners is moving at the lever's
+    // interpolation of the two of them -- which is what outlineTouch already says for
+    // the position. Reading the average instead says a body turning on the spot is not
+    // moving at all where it is touching, so a shape rocking on a ball never rubbed it.
+    const Vec3 surfaceVelocity = body != nullptr ? bodyFaceSpeed(std::size_t(bodyIndex), contactPoint) : Vec3{};
+
+    // A ball found through an outline is the ball's own way out: the body's tick
+    // keeps its outline clear of the ball -- that is what the sweep in tickBody is
+    // for -- so what is left for the ball is where the ball itself has come to be
+    // inside the shape. The ball goes back out along the way it is nearest to
+    // being outside, and the floor is the one thing it cannot go out through.
+    // A depth under a micrometre is touching, not buried. The sweep lands the ball
+    // on the surface and the bisection leaves it a nanometre either side of it, so
+    // "any depth at all" entered this recovery path on a contact that was perfectly
+    // ordinary -- and the path cancels the speed the ball arrived with, before the
+    // bounce has been worked out. That is a ball that stops dead on one bounce and
+    // bounces properly on the next, decided by which side of a nanometre it landed.
+    if (depth > playground_tick::kQuantum) {
+        const OutlineGap now = outlineGap(ball.position, body ? body->previous.data() : nullptr,
+                                          body ? body->position.data() : nullptr, body ? body->count : 0, 1.0);
+        normal = now.normal;
+        const double through = ball.radius - now.gap;
+        // A ball a micrometre in is touching, not inside: the room's resolution is a
+        // micrometre in a tick, so moving it back by less than one is moving it by
+        // nothing, and only a depth the simulation can tell from touching is a depth
+        // to be put right.
+        if (through > playground_tick::kQuantum) {
+            // The floor is under the ball, so a way out that goes downwards is no
+            // way out: what is left over is the ball rolling along the floor, out
+            // from under whatever is on it, rather than being left with a shape cut
+            // into it.
+            const double ground = (normal.y < 0.0)
+                                      ? std::max(0.0, (ball.radius - ball.position.y) / normal.y)
+                                      : through;
+            const double byBall = std::min(through, ground);
+            ball.liftedOut += byBall > kSkin ? 1 : 0;
+            ball.position = ball.position + normal * byBall;
+            const double left = through - byBall;
+            if (body != nullptr && left > kSkin) {
+                const OutlineGap after = outlineGap(ball.position, body->previous.data(), body->position.data(),
+                                                    body->count, 1.0);
+                if (after.gap < ball.radius) {
+                    const auto clearAt = [&](double x) {
+                        Vec3 moved{ball.position.x + x, std::max(ball.position.y, ball.radius), 0};
+                        return outlineGap(moved, body->previous.data(), body->position.data(), body->count, 1.0)
+                                   .gap >= ball.radius;
+                    };
+                    // Which way is out along the floor: the way that puts the
+                    // ball further from the shape.
+                    const double side = clearAt(-0.01) || !clearAt(0.01) ? -1.0 : 1.0;
+                    double failed = 0.0, found = -1.0;
+                    for (int step = 1; step <= 200 && found < 0.0; ++step) {
+                        const double reach = 0.001 * double(step);
+                        if (clearAt(side * reach)) {
+                            found = reach;
+                            break;
+                        }
+                        failed = reach;
+                    }
+                    if (found > 0.0) {
+                        double low = failed, high = found;
+                        for (int step = 0; step < kBisections; ++step) {
+                            const double middle = 0.5 * (low + high);
+                            if (clearAt(side * middle)) {
+                                high = middle;
+                            } else {
+                                low = middle;
+                            }
+                        }
+                        ball.position.x += side * high;
+                        ball.position.y = std::max(ball.position.y, ball.radius);
+                        if (ball.velocity.x * side < 0.0) ball.velocity.x = 0.0;
+                    }
+                }
+            }
+            contactPoint = contactPoint - normal * (through);
+        }
+        // The speed it arrived with is not cancelled here. Putting the ball back on
+        // the surface says where it is; what it does next is the contact's answer,
+        // and that is worked out below -- the bounce included. Cancelling it first
+        // left the answer with nothing to be about, which is how a ball dropped on a
+        // cube stopped dead halfway through its bounces instead of losing height
+        // steadily. Anything still pointing into the surface after the answer is
+        // taken off at the end of the tick, where it belongs.
+    }
+
+    if (!exchange) {
+        // The blow for this body was struck earlier in the tick. What is left is
+        // where the two are, and the ball may not travel into it any further.
+        const double into = dot(ball.velocity - surfaceVelocity, normal);
+        if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+        if (normal.y > 1e-9) ball.standing = ball.standing && holdsBall(normal);
+        // That stop is a contact like any other, and a contact the ball feels is a
+        // force on it -- so it is written, and it goes in the tick's account. A
+        // second meeting with the same shape in one tick used to be answered in
+        // silence: the ball was stopped by a surface that appeared nowhere on screen
+        // and in no sum, and the ground's share (worked out as the remainder) carried
+        // a blow the shape had really given. It is not a bounce -- the blow has
+        // already been struck -- but it is not nothing either.
+        const Vec3 stopped = (ball.velocity - ballBefore) * ball.mass;
+        ball.blows = ball.blows + stopped;
+        if (length(stopped) > 1e-9)
+            addForce(contactPoint, stopped * (1.0 / kTick), ForceKind::Contact, nullptr, ownerOf(ball));
+        recordBall();
+        return;
+    }
+
+    // Both sides stop where they met: the ball loses the part of its speed that
+    // was driving into the shape, and the shape takes the blow. The bodies are
+    // stepped before the ball, so where the body is, is where it has already been
+    // solved to be -- the ball is the one that has travelled since.
+    // What the struck corner actually did this tick. Its stored velocity can be
+    // zero -- the floor cuts it when the corner lands -- while the corner is still
+    // travelling down into the ball, and the ball has to answer the travel.
+
+    // How fast the two are closing *where and when they meet* -- both measured at
+    // one instant, the instant of the contact itself.
+    //
+    // It used to be measured with the ball's speed from the start of the tick and
+    // the surface's speed from the end of it, and those are not the same moment. In
+    // one tick of this room gravity alone is half a metre a second, and a plank at a
+    // radian a second moves its face by a third of one, so the two numbers were taken
+    // half a metre a second apart and the difference was handed back as a bounce. A
+    // ball resting on a moving seesaw was answered as if it had arrived at a metre a
+    // second when it had arrived at nothing at all: a fresh bounce every tick, from a
+    // contact that was never an impact.
+    //
+    // The ball's speed at the meeting is its speed now, and the surface's is read
+    // from the very contact point it is being asked about.
+    // What the ball is doing, as far as this surface can tell.
+    //
+    // A taut rope has already removed the outward radial part of the ball's
+    // motion, including the radial gravity acquired by the unconstrained walk.
+    // That applies to impacts too: treating a whole tick of radial fall as
+    // incoming speed makes a slow swing bounce faster than it arrived. Inward
+    // motion is left untouched, because the rope cannot push the ball away.
+    const auto answered = [&](Vec3 speed) { return ballOffTheRope(ball, speed); };
+    const Vec3 ballSpeed = instantaneous ? ball.velocity : answered(ball.velocity);
+    const double predictedClosing = dot(ballSpeed - surfaceVelocity, normal);
+    const bool arrived = instantaneous ? predictedClosing < -kRestSpeed
+                                       : dot(answered(ball.began) - surfaceVelocity, normal) < -kRestSpeed;
+    const bool blow = arrived && !resting;
+    // What the ball was doing at the instant it met the surface. Its speed is carried
+    // through the tick from `arrival` to what it is now, so the fraction of the way
+    // through the tick is the fraction of the way from one to the other: at the very
+    // moment of a contact, that is the speed the blow is answered to.
+    const Vec3 arrivalSpeed = answered(ball.arrival);
+    const Vec3 atMeeting = instantaneous ? ballSpeed
+                                        : arrivalSpeed + (ballSpeed - arrivalSpeed) * std::clamp(reached, 0.0, 1.0);
+    const double approach = dot(atMeeting - surfaceVelocity, normal);
+    // The impulse is an event at the meeting, not at the end of the tick.
+    // Using the end-of-tick closing speed made it cancel the remaining gravity
+    // along the normal and left tangential gravity untouched; adding a whole
+    // remaining gravity kick afterwards then applied the tangential part twice.
+    const double closing = approach;
+    // A bounce is the answer to arriving at a surface, and `arrived` says so: closing at
+    // the beginning of the ball's own tick, with the speed the rope permits. It used to
+    // say "and not `resting`" as well, and `resting` only means the walk found the ball
+    // already against the face -- so a ball that bounced off the slope, swung back and
+    // hit it again at four tenths of a metre a second was stopped dead, every time, and
+    // that is the ball that is not jumpy.
+    //
+    // A sustained contact needs no blow back, and `arrived` is what tells that apart: a
+    // ball riding a turning plank closes on its face by a few millimetres a tick because
+    // the *face* is moving, and three quarters of that came back as a launch each tick --
+    // the plank loaded on every other tick and coasted the ones between.
+    const double rebound = (approach < 0.0 && arrived && !(instantaneous && resting))
+                               ? -ball.restitution * approach : 0.0;
+    // A taut rope answers only the part of an impact that would stretch it.
+    // It cannot resist a blow directed towards the anchor: that makes it slack.
+    Vec3 ballDirection = normal;
+    if (instantaneous && rope.attached && rope.taut && rope.ball < kBallCount &&
+        &ball == &balls_[rope.ball]) {
+        const Vec3 arm = ball.position - rope.anchor;
+        const double reach = length(arm);
+        if (reach >= rope.length - kTouch && reach > 0.0) {
+            const Vec3 outward = arm / reach;
+            ballDirection = normal - outward * std::max(0.0, dot(normal, outward));
+        }
+    }
+    const double instantShare = dot(normal, ballDirection) / ball.mass;
+    const auto recordRopeImpulse = [&](double impulse) {
+        const Vec3 ropeImpulse = (ballDirection - normal) * impulse;
+        if (length(ropeImpulse) <= 1e-12) return;
+        addForce(ball.position, ropeImpulse * (1.0 / kTick), ForceKind::Rope, nullptr, ownerOf(ball));
+        addForce(rope.anchor, ropeImpulse * (-1.0 / kTick), ForceKind::Rope, nullptr, kAnchorOwner);
+    };
+    double pressed = 0.0;
+    // What this meeting was, kept in force: the impulse the ball was dealt, and the
+    // impulse its arrival was worth -- the momentum it took to stop it. See the note
+    // on BallTouch: a bounce is a pair of forces at one instant, and the coefficient
+    // is the ratio between them, so this is where it is written down and this is the
+    // only way it is ever read back.
+    double metGiven = 0.0;
+    double metArrival = 0.0;
+    const auto noteMeeting = [&]() {
+        if (!(metArrival > 0.0)) return;
+        const std::size_t slot = bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex);
+        if (ball.meetingArrival[slot] > 0.0 && metGiven * ball.meetingArrival[slot] <= ball.meetingGiven[slot] * metArrival)
+            return;
+        ball.meetingGiven[slot] = metGiven;
+        ball.meetingArrival[slot] = metArrival;
+        if (instantaneous) {
+            ball.meetingSpeedIn[slot] = closing;
+            const Vec3 afterSurface = body != nullptr ? bodyFaceSpeed(std::size_t(bodyIndex), contactPoint) : Vec3{};
+            ball.meetingSpeedOut[slot] = dot(ball.velocity - afterSurface, normal);
+        }
+    };
+    if (closing < 0.0) {
+        if (canMove) {
+            // A body struck by the ball takes the blow as the solid it is: every
+            // corner of it moves together, turning about the middle by the amount
+            // that blow would turn it. Where the two shapes are touching, not the
+            // nearest corner: the ball meeting the middle of a face turns the body
+            // by nothing, and a corner of a face is not where the blow lands.
+            // Is the shape the ball is hitting standing on the floor? Its lowest
+            // corner within a micrometre of it is the shape being carried, and a
+            // shape being carried cannot be pushed further into what carries it.
+            bool onFloor = false;
+            if (normal.y > 0.0 && body->count > 0) {
+                double lowest = body->position[0].y;
+                for (std::size_t i = 1; i < body->count; ++i) lowest = std::min(lowest, body->position[i].y);
+                onFloor = lowest <= playground_tick::kSurfaceY + playground_tick::kQuantum;
+            }
+            double bodyShare = giveAtHeld(*body, contactPoint, answer, onFloor);
+            if (instantaneous && std::abs(normal.y) > 1e-8) {
+                // Match the compliance to the actual pushBody response, including
+                // the part a floor-supported body cannot receive downwards.
+                const Vec3 arm = contactPoint - body->centre;
+                const Vec3 freePush = bodyFree(*body, normal * -1.0);
+                const double lever = arm.x * normal.y - arm.y * normal.x;
+                const double turn = arm.x * freePush.y - arm.y * freePush.x;
+                bodyShare = -dot(freePush, normal) * inverseMass(*body) - turn * lever / body->moment;
+            }
+            // What the ball can take of this blow is only what it is free to do with
+            // it. A ball already held by a surface, or one on the floor that the
+            // blow would drive downwards, has nowhere to go: the body takes the
+            // whole answer, and stops on the ball instead of sinking into it and
+            // being answered again next tick.
+            // A face above the ball pressing it down is a face the ball has
+            // nowhere to go under: the floor is under it and the floor wins. But
+            // "above" has to mean above. A face that is level points sideways, and
+            // in floating point it points sideways by about a part in a million
+            // billion -- so testing the sign alone said a horizontal face was
+            // pressing the ball into the floor whenever the ball happened to be
+            // resting on it, gave the ball no say in the blow, and a ball that ran
+            // into the side of a cube stopped dead instead of bouncing off it.
+            // Bounciness is not a property of up, and a side hit is a hit.
+            // "Over the ball" is a statement about the face, and the question it
+            // answers is which of the two it is: a face that is more above than
+            // beside, or more beside than above. A face whose normal is closer to
+            // straight down than to level is over the ball and the floor under it
+            // wins; a face that is nearer level is a wall, and a ball pressed against
+            // a wall rolls along the floor out of its way. Anything with a number in
+            // it -- "more than a microradian", "more than a millionth" -- answers a
+            // different question, the one about how level a face happens to be in
+            // floating point, and says a brick wall is a low ceiling.
+            // The ball's say in the blow, as an inverse mass: none along the way the
+            // surface under it will not let it go, and the whole of it along the way
+            // that surface is not in the way. That is what turns "a shape landing on
+            // the top of it" into the floor's answer while "a shape striking its
+            // side" still shoves the ball across the room.
+            // The ball's say in this blow is the way it is still free to move, not whether
+            // it is resting; the way it cannot go is what the surface under it refuses.
+            const double ballShare = instantaneous ? instantShare : ballCompliance(ball, normal, false);
+            // A contact pushes and never pulls: where the two are already separating
+            // the solve asks for a negative impulse, which pulls the ball back onto the
+            // face it is leaving -- a bounce stopped dead in the tick after it.
+            const double impulse = blow
+                ? sideImpactImpulse(*body, contactPoint, normal, ballShare, closing, rebound, bodyShare)
+                : std::max(0.0, (rebound - closing) / (ballShare + bodyShare));
+            ball.velocity = ball.velocity + (instantaneous ? ballDirection * (impulse / ball.mass)
+                                                            : normal * (impulse * ballShare));
+            if (instantaneous) recordRopeImpulse(impulse);
+            // Struck is not asleep. A ball given any of this blow has something to
+            // do with it, and a frozen ball is not stepped at all.
+            if (impulse != 0.0) ball.frozen = false;
+            // What this surface can rub against the ball is what it can press the
+            // ball with, and the ball is only pressed by the part of the blow it
+            // actually took. A ball lying on the floor with a shape landing flat on
+            // top of it takes none of that blow -- the floor under it does -- and a
+            // friction solve given the whole of it span the ball sideways and down
+            // at metres a second off a body that never touched it that way.
+            // The shape is handed the whole of it, and the floor is left to answer
+            // its own half.
+            //
+            // It used to be handed only the part that was not pointing down: the rest
+            // was said to be "the floor's to answer", and it was taken off the ball
+            // and given to nobody. That is momentum leaving the room. Measured on the
+            // King's own drop -- the ball let go above the triangle's hypotenuse --
+            // the ball gave up 3.39 m/s along the face's normal, the triangle received
+            // (-1.487, +0.000) newton seconds, and the other 1.487 vanished: the ball
+            // came off the slope at a fifth of the blow it had landed with, and the
+            // slope had not moved to account for it. The floor can answer a downward
+            // blow, and it does -- it is a contact like any other, it is in the ledger,
+            // and it is solved on the next tick. What it cannot do is answer for a
+            // force that was never applied.
+            //
+            // Handing the whole blow over also makes the pair add up in the arithmetic
+            // that solved it: the impulse was worked out against the shape's own
+            // compliance, and a shape given less than that keeps a speed that
+            // disagrees with the relative velocity the solve was aiming for -- which
+            // is restitution quietly not delivered.
+            Vec3 handed = answer * -impulse;
+            pushBody(*body, contactPoint, handed, ForceKind::Ball);
+            blown = handed * -1.0;
+            pressed = instantaneous ? impulse : impulse * ballShare;
+            // The ball's share of the blow, as the momentum it was given: the impulse
+            // the solve worked out, less the part of it a surface under the ball
+            // refused. And what the arrival was worth, over the same compliance, so
+            // that the two numbers are the same kind of thing.
+            metGiven = instantaneous ? impulse : ball.mass * impulse * ballShare;
+            metArrival = -approach / (ballShare + bodyShare);
+            noteMeeting();
+        } else {
+            // Nowhere to go: the ball takes the whole answer itself -- and, as above,
+            // only the pushing half of it.
+            const double share = instantaneous ? instantShare : 1.0 / ball.mass;
+            const double impulse = share > 1e-12 ? std::max(0.0, (rebound - closing) / share) : 0.0;
+            ball.velocity = ball.velocity + (instantaneous ? ballDirection : normal) * (impulse / ball.mass);
+            if (instantaneous) recordRopeImpulse(impulse);
+            blown = normal * impulse;
+            pressed = impulse;
+            metGiven = impulse;
+            metArrival = share > 1e-12 ? -approach / share : 0.0;
+            noteMeeting();
+        }
+    }
+
+
+    // Can this surface hold the ball still? That is the whole of static friction:
+    // mu_s * N against the pull along the surface. The floor can, a slope cannot.
+    // Only a surface that is underneath the ball is asked: a ball leaning on the
+    // cube's upright side is held up by the floor, and letting that side answer for
+    // the floor dropped a ball resting against it every other tick.
+    // A face is never exactly level in floating point, so a normal that is level to
+    // within this much is a wall, not a floor: it carries nothing, and asking it to
+    // carry the ball made a ball resting against the cube drop and bounce every
+    // other tick.
+    if (normal.y > 1e-9) {
+        ball.standing = ball.standing && holdsBall(normal);
+        // The surface that is under it, remembered: a ball left standing on
+        // something is pressed at this point, so this is where its weight comes
+        // back up and where the arrow for it belongs.
+        ball.supportNormal = normal;
+    }
+
+    // A contact that is not a blow is still a contact. The surface carries the
+    // ball's weight for as long as the ball is on it, and friction is that weight
+    // times mu -- the same thing the floor already answers, because gravity drives
+    // the ball into the floor and the ball loses that speed to it every tick. A
+    // slope is not that: the ball runs *along* the face, so nothing drives it into
+    // the face and the blow is nothing, and with no normal force there was no
+    // friction at all. The seam stood still while the ball ran away down the face
+    // and then jumped when the next blow arrived. What the surface carries when it
+    // is only holding the ball up is the weight pressed into it, over the tick.
+    // A face over the ball is not holding it up, so the ball's own weight is not
+    // pressed into it: what is pressed into it is whatever stands on the ball, and
+    // that is read from the body over it in settleBallFriction().
+    if (!(pressed > 0.0) && normal.y > 0.0)
+        pressed = kGravity * ball.mass * normal.y * kTick;
+
+    // Friction is not applied here. A grip at one surface changes what is left to
+    // slip at every other surface the ball is against, so the whole tick's contacts
+    // are solved against each other once they are all known -- see
+    // settleBallFriction(). What is recorded is what each contact is: the face, how
+    // it is moving there, and how hard it is pressed.
+    // Every face the tick met is recorded, whether or not this tick's answer gave it
+    // a load of its own. A face with a weight standing on it carries one whether or
+    // not anything moved, and that load is worked out over all the faces together in
+    // settleBallFriction(): a face over the ball carries what stands on it, and a
+    // face under it carries the rest. Dropping the ones whose own answer was nothing
+    // is what left the ball with no grip underneath a weight that was resting on it.
+    // One face, one contact. The same face can be met by more than one road in a
+    // tick -- the walk, and the standing touch that has to exist even when the ball
+    // did not travel -- and it is still one face. Answered twice it is not twice the
+    // surface: it is one surface whose load is shared between two copies of itself,
+    // so each copy presses with half the force that is really there, and the ball's
+    // grip on it is half what it should be. A pinched ball had the floor counted
+    // twice under it, and the floor was then no stronger than the weight above.
+    if (ball.touchCount < Ball::kMaxTouches) {
+        const std::size_t mate = bodyIndex < 0 ? kBodyCount : std::size_t(bodyIndex);
+        std::size_t slot = ball.touchCount;
+        for (std::size_t i = 0; i < ball.touchCount; ++i) {
+            if (ball.touches[i].body != mate) continue;
+            if (dot(ball.touches[i].normal, normal) < 0.999) continue;
+            slot = i;
+            break;
+        }
+        if (slot == ball.touchCount) {
+            ball.touches[slot] = BallTouch{normal, surfaceVelocity, pressed, mate};
+            ball.touches[slot].given = metGiven;
+            ball.touches[slot].arrival = metArrival;
+            ++ball.touchCount;
+        } else {
+            ball.touches[slot].pressed = std::max(ball.touches[slot].pressed, pressed);
+            // One face, one meeting: a second answer at the same face in the same tick
+            // is the same blow carried further, so what it dealt adds up.
+            ball.touches[slot].given += metGiven;
+            ball.touches[slot].arrival += metArrival;
+            if (length(ball.touches[slot].surfaceVelocity) < length(surfaceVelocity))
+                ball.touches[slot].surfaceVelocity = surfaceVelocity;
+        }
+    }
+    // Rolling resistance is not done here, and it is not a force taken off the
+    // ball's speed. It is a couple, it is applied to the ball's turn, and it is
+    // applied once for the whole tick in settleBallFriction(), against the load the
+    // contacts are really carrying. See that function: a ball that is rolling
+    // perfectly has nothing sliding anywhere for friction to act on, and something
+    // has to be what stops it rolling for ever.
+
+    // And whatever is left pointing into the surface is speed the ball cannot spend.
+    // The bodies are stepped before the ball, so what a body gave way by is already
+    // in its positions and not in what is left of the tick: for the rest of the tick
+    // this surface is where it is, and a ball that kept its inward part would drive
+    // itself through a face that has already finished moving -- which is exactly
+    // what a ball landing on a shape that gives a little under it does. A bounce has
+    // turned the ball around before this runs, so nothing that was leaving is caught.
+    // Measured against the surface's own motion, not against the room. A face that
+    // is travelling -- a turning plank, a shape a weight is pushing over -- is where
+    // the ball may not go *relative to it*, and asking the question of the ball's
+    // speed alone answered something else: it took the surface's motion for speed
+    // the ball had and could not spend, and paid it back as a blow. On a seesaw at a
+    // radian a second that was a third of a metre a second of speed conjured out of
+    // nothing, every contact, along the normal -- which both threw the ball clear of
+    // the very face it had just been answered on and left the plank unloaded for the
+    // ticks the ball spent falling back. The ball was in the air half the time and
+    // the plank was kicked the other half: stop, move, stop, move.
+    //
+    // And what "pointing into" means is the same question the blow was asked, so it is
+    // answered the same way: for a contact being kept on a taut rope, the part of the
+    // ball's speed that is running away from the anchor is the rope's, and the rope is
+    // going to take it before this tick is over. Cancelling it here as well is how a ball
+    // set down on the slope slid along it for ever -- the fall was stopped square to the
+    // face, the part along the face was left in the ball, and the face did the same thing
+    // again next tick. Nothing is conjured by leaving it: holdOnRope() takes it, and the
+    // contact takes nothing it was not given.
+    if (!instantaneous) {
+        // The legacy walk may still have a residual into this surface. An exact
+        // time-of-impact solve has already updated both bodies and must not be
+        // checked against the surface's old velocity a second time.
+        const Vec3 check = ballOffTheRope(ball, ball.velocity);
+        const double into = dot(check - surfaceVelocity, normal);
+        if (into < 0.0) ball.velocity = ball.velocity - normal * into;
+    }
+    // What this shape gave the ball, drawn where the two met.
+    //
+    // It is written even when the ball's speed does not change by it, because what
+    // the ball's speed does is not the whole story: a ball on the floor is answered
+    // by the floor, and the blow it took and the blow it handed back are two forces
+    // at one place, not none. The other half -- what the ground supplied -- is worked
+    // out once at the end of the tick, from the ball's account, in tickBall().
+    ball.blows = ball.blows + blown;
+    if (length(blown) > 1e-9) addForce(contactPoint, blown * (1.0 / kTick), ForceKind::Contact, nullptr, ownerOf(ball));
+    recordBall();
+}
+
+// The ball runs into the dot. Both have mass, so they exchange momentum along the
+// line between them.
+void PlaygroundRoom::hitBallWithPoint(Ball& ball, Vec3 normal) {
+    const Vec3 ballBefore = ball.velocity, pointBefore = velocity_;
+    const double spinBefore = ball.spin;
+    const double closing = dot(ball.velocity - velocity_, normal);
+    // Nothing springs back between two things that are both free to move.
+    const double rebound = 0.0;
+    if (closing < 0.0) {
+        // A dot that is not free to move -- frozen, or held by the mouse -- cannot
+        // take a share of the blow, and giving it one only leaves the ball with a
+        // speed the dot can never have given it.
+        const double pointShare = pointFrozen_ || dragTarget_ == DragTarget::Point ? 0.0 : 1.0;
+        const double impulse = (rebound - closing) / (1.0 / ball.mass + pointShare / kMass);
+        ball.velocity = ball.velocity + normal * (impulse / ball.mass);
+        velocity_ = velocity_ - normal * (impulse * pointShare / kMass);
+        ball.frozen = false;
+        pointFrozen_ = false;
+        resting_ = false;
+        restingBody_ = -1;
+    }
+    // A face is never exactly level in floating point, so a normal that is level to
+    // within this much is a wall, not a floor: it carries nothing, and asking it to
+    // carry the ball made a ball resting against the cube drop and bounce every
+    // other tick.
+    if (normal.y > 1e-9) ball.standing = ball.standing && holdsBall(normal);
+    // The dot and the ball are two bodies in one blow: each one's share is written
+    // down at the place they met, so F shows the pair of arrows the exchange is.
+    {
+        const Vec3 onBall = (ball.velocity - ballBefore) * (ball.mass / kTick);
+        const Vec3 onPoint = (velocity_ - pointBefore) * (kMass / kTick);
+        if (length(onBall) > 1e-6) addForce(ball.position, onBall, ForceKind::Ball, nullptr, ownerOf(ball));
+        ball.blows = ball.blows + (ball.velocity - ballBefore) * ball.mass;
+        const double inertia = 0.4 * ball.mass * ball.radius * ball.radius;
+        const double turned = inertia * (ball.spin - spinBefore) / kTick;
+        if (std::abs(turned) > 1e-9) addCouple(point_, turned, Vec3{}, ForceKind::Ball, ownerOf(ball));
+        if (length(onPoint) > 1e-6) addForce(point_, onPoint, ForceKind::Ball, nullptr, kDotOwner);
+    }
+    // Separate them, so they are not still overlapping next tick.
+    const Vec3 gap = ball.position - point_;
+    const double distance = length(gap);
+    const double overlap = kPointRadius + ball.radius - distance;
+    if (overlap > 0.0 && distance > 1e-12) {
+        ball.position = ball.position + gap * (overlap * 0.5 / distance);
+        point_ = point_ - gap * (overlap * 0.5 / distance);
+    }
+}
+
+// The ball against the bob on the rope.
+//
+// Two circles, and the whole of the answer is that they share one blow: what the ball
+// gives up along the line of centres, the bob takes, and the two are written in the
+// ledger at the place they met with one end for each -- so the pair the room shows is
+// the pair the room applied.
+//
+// The bob was stepped before the ball, so its own travel through this tick is spent;
+// the blow changes the speed it will spend the *next* tick with, and its place is
+// untouched. That is the same order the ball and the shapes already keep, and it is
+// what keeps the rope honest: a bob whose place jumped in the middle of the ball's
+// tick could be a bob further from its anchor than the rope is long.
+//
+// `resting` says the ball was already against the other one when this piece of the
+// walk began. A contact is not an arrival, and a contact gives nothing back: two balls
+// lying against each other would otherwise bounce apart every tick with no bounce in
+// them.
+//
+// Both ends are balls, so both ends are treated the same: the impulse is worked out
+// against the two masses together and given to one and taken from the other, and it is
+// written on the ledger twice, at the one place the two of them met, once for each of
+// them. There is no "the bob" here -- there is a ball, and the ball it met.
+void PlaygroundRoom::ballAgainstBall(Ball& ball, std::size_t other, Vec3 normal, bool resting, double reached) {
+    (void)reached;
+    Ball& partner = balls_[other < kBallCount ? other : 0];
+    // What the other ball is doing, read the way the room reads a shape's speed: its
+    // step over the tick. Its step is its own, taken before this ball's walk began.
+    const Vec3 partnerSpeed = (partner.position - partner.previous) * (1.0 / kTick);
+    const double closing = dot(ball.velocity - partnerSpeed, normal);
+    const Vec3 at = ball.position - normal * ball.radius;
+    if (closing < 0.0) {
+        const double restitution = std::min(ball.restitution, partner.restitution);
+        const double rebound = resting ? 0.0 : -restitution * closing;
+        const double give = 1.0 / ball.mass + 1.0 / partner.mass;
+        const double impulse = (rebound - closing) / give;
+        ball.velocity = ball.velocity + normal * (impulse / ball.mass);
+        partner.velocity = partner.velocity - normal * (impulse / partner.mass);
+        // A blow along the line between two centres has no lever about either of them,
+        // so neither ball is spun by it: a ball struck through its middle turns no
+        // faster than it did, and adding a turn here would be a turn out of nothing.
+        addForce(at, normal * (impulse / kTick), ForceKind::Ball, nullptr, ownerOf(ball));
+        addForce(at, normal * (-impulse / kTick), ForceKind::Ball, nullptr, ownerOf(partner));
+        // Struck is not asleep, at either end.
+        ball.frozen = false;
+        partner.frozen = false;
+    }
+    // Never inside it. The sweep above is the prevention and this is the arithmetic's
+    // rounding: a ball left a fraction of a micron into the other one is put back on
+    // its surface, by position and nothing else.
+    const Vec3 gap = ball.position - partner.position;
+    const double distance = length(gap);
+    const double reach = ball.radius + partner.radius;
+    if (distance > 0.0 && distance < reach) ball.position = partner.position + gap * (reach / distance);
+}
+
+// The dot runs into the ball. The normal points from the ball to the dot, so the
+// dot is the one that gets pushed back, and whatever it hands over is what the
+// ball takes.
+void PlaygroundRoom::pointAgainstBall(Ball& ball, Vec3 normal) {
+    const double closing = dot(velocity_ - ball.velocity, normal);
+    // The ball is the elastic one, so a blow against it answers with the ball's
+    // restitution -- the same number every other thing that meets it is answered
+    // with. This used to be zero, which made the dot a special case that the ball
+    // was not bouncy towards: a dot dropped on a ball sank into it and stopped, and
+    // a ball with a dot on it never threw it back, whatever the material said.
+    // An arrival is the answer to coming at the ball, and coming at it is what the
+    // point was doing when the tick opened -- not what the tick's own weight has
+    // made of it since.
+    //
+    // A point lying on a ball is one tick from being shaken: the weight of a whole
+    // tick is given to it at the top, so a point that had twenty centimetres a
+    // second left in it *upwards* is falling by the time it has crossed the same
+    // six millimetres, meets the ball, and is bounced by its own weight. The bounce
+    // gives back three quarters of it, the tick's travel carries it back to exactly
+    // where it started, and the whole thing is a fixed point of the tick map: the
+    // point sits on the ball shaking twenty times a second, with its place
+    // unchanged to nine decimals. Measured: a dot dropped on a ball bounced on it
+    // for eighty seconds instead of settling, and it came to rest on a limit at
+    // 0.316000120 m that never moved again because it never stopped moving.
+    //
+    // So a point that was not closing on the ball when the tick began is not
+    // arriving at it. What it gets is a contact, which stops it -- the same answer
+    // the room gives anything that is already against what it has reached.
+    const double arriving = dot(pointArrival_ - ball.velocity, normal);
+    const double rebound = (closing < 0.0 && arriving < 0.0) ? -ball.restitution * closing : 0.0;
+    if (closing < 0.0) {
+        // The ball's say in the blow, along the direction the blow pushes it. The
+        // dot pushes the ball along -normal (the normal runs from the ball to the
+        // dot), and what the ball can do with that is whatever is not blocked by
+        // the surface it is standing on. Straight down onto a ball on the floor is
+        // the floor's to answer and the dot bounces off the ball; across it is the
+        // ball's, and the ball goes.
+        const double ballShare = ballCompliance(ball, normal * -1.0, ballHeld(ball));
+        const double impulse = (rebound - closing) / (1.0 / kMass + ballShare);
+        velocity_ = velocity_ + normal * (impulse / kMass);
+        ball.velocity = ball.velocity - normal * (impulse * ballShare);
+        ball.blows = ball.blows - normal * (impulse * ballShare);
+        // A ball that has been struck is a ball that is doing something, and a ball
+        // that is doing something is not asleep. It used to be woken here and then
+        // given no speed at all, which is a ball that wakes up and stands still.
+        ball.frozen = false;
+        pointFrozen_ = false;
+        resting_ = false;
+        restingBody_ = -1;
+    }
+    const Vec3 gap = point_ - ball.position;
+    const double distance = length(gap);
+    const double overlap = kPointRadius + ball.radius - distance;
+    if (overlap > 0.0 && distance > 1e-12) {
+        // The dot is the thing that is where it should not be, so the dot is the
+        // one that moves -- unless the ball can take its share, which is the same
+        // question as above. Pushing the ball half the overlap downwards put it
+        // through the floor it was resting on.
+        const Vec3 way = gap * (1.0 / distance);            // ball -> dot
+        const double ballCan = ballCompliance(ball, way, ballHeld(ball)) * ball.mass;
+        const double ballPart = std::clamp(0.5 * ballCan, 0.0, 1.0);
+        point_ = point_ + way * (overlap * (1.0 - ballPart));
+        ball.position = ball.position - way * (overlap * ballPart);
+    }
+}
+
+}  // namespace gtc::native

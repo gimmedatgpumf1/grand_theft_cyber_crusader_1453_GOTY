@@ -14,15 +14,10 @@ class SkeletonComparisonUi {
 public:
     void draw(NativeFrame& frame, const SkeletonRoom& room) const {
         const Layout l=layout(frame.width,frame.height);
-        if (!open_) {
-            const int x=(frame.width-330)/2, y=std::max(0,frame.height-37);
-            frame.blendRectangle(x,y,330,29,colorHex("#142632"),0.78);
-            drawTextPixels(frame,x+10,y+4,"P: sliders   Esc: cursor",colorHex("#d4e9ff"),20);
-            return;
-        }
-        frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex("#10212c"),0.83);
-        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: VISUAL PROXY",colorHex("#9dceff"),20);
-        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,"Esc: cursor   P: hide   click outside: look",colorHex("#c2cfda"),20);
+        if (!open_) return;
+        frame.blendRectangle(l.x,l.y,l.w,l.h,colorHex(hexRgb("#10212c")),0.83);
+        drawTextPixels(frame,l.x+10,l.y+3,"BLUE: +/-1.5 SD",colorHex(hexRgb("#9dceff")),20);
+        if (l.wide) drawTextPixels(frame,l.x+260,l.y+3,"Esc: cursor   Tab: hide   click outside: look",colorHex(hexRgb("#c2cfda")),20);
         button(frame,l.x+10,l.y+30,85,male_?"MALE *":"MALE");
         button(frame,l.x+100,l.y+30,110,!male_?"FEMALE *":"FEMALE");
         button(frame,l.x+l.w-84,l.y+30,74,"RESET");
@@ -32,17 +27,19 @@ public:
             if (l.compact && i/4!=page_) continue;
             const int col=l.wide ? i/4 : 0, row=(l.wide || l.compact) ? i%4 : i;
             const int left=l.x+col*l.colWidth, y=l.y+59+row*27;
-            drawTextPixels(frame,left+10,y+2,names[i],colorHex("#e6edf2"),20);
+            drawTextPixels(frame,left+10,y+2,names[i],colorHex(hexRgb("#e6edf2")),20);
             const auto& p=c.profile();
-            const double fraction=i==0 ? (p.height-40)/190 : (p.multiplier[i]-0.5);
+            const auto limits=c.dimensionLimits(i,p.height);
+            const double fraction=i==0 ? (p.height-50)/180 : limits
+                ? (c.requestedTargets()[i]-limits->minimum)/(limits->maximum-limits->minimum) : 0;
             const int start=left+130, width=l.colWidth-230;
-            frame.blendRectangle(start,y+10,width,4,colorHex("#63839c"),0.8);
+            frame.blendRectangle(start,y+10,width,4,colorHex(hexRgb("#63839c")),0.8);
             const int x=start+static_cast<int>(std::clamp(fraction,0.0,1.0)*width);
-            frame.rectangle(x-3,y+4,7,17,colorHex("#53aaff"));
+            frame.rectangle(x-3,y+4,7,17,colorHex(hexRgb("#53aaff")));
             button(frame,left+103,y,22,"-"); button(frame,left+l.colWidth-94,y,22,"+");
             char value[32]; const double v=i==0?p.height:c.targets()[i];
             std::snprintf(value,sizeof value,(v<10 || v>=1000)?"%.4g":"%.1f",v);
-            drawTextPixels(frame,left+l.colWidth-68,y+2,value,colorHex("#e8f5ff"),20);
+            drawTextPixels(frame,left+l.colWidth-68,y+2,value,colorHex(hexRgb("#e8f5ff")),20);
         }
         std::string text;
         if (l.compact) text=std::string(c.exact()?"cm | ":"Adjusted | ")+(page_==0?"More sliders >":"First sliders >");
@@ -53,14 +50,14 @@ public:
                           fitted[SkeletonComparison::Torso],wanted[SkeletonComparison::Torso],
                           fitted[SkeletonComparison::Leg],wanted[SkeletonComparison::Leg]);
             text=message;
-        } else if (!c.exact()) text="Bone fit: values adjusted.";
-        else text=l.wide ? "cm  |  Surface targets; skeletal proxies." : "cm  |  Esc: cursor   P: hide";
-        drawTextPixels(frame,l.x+10,l.y+l.h-24,text,colorHex("#c0d7e7"),20);
+        } else if (!c.exact()) text="Fitted values (cm).";
+        else text=l.wide ? "cm  |  Surface targets; skeletal proxies." : "cm  |  Esc: cursor   Tab: hide";
+        drawTextPixels(frame,l.x+10,l.y+l.h-24,text,colorHex(hexRgb("#c0d7e7")),20);
     }
 
     bool handle(const WindowEvent& e, bool captured, int width, int height, SkeletonRoom& room) {
         if (e.type==WindowEvent::Type::FocusLoss) { dragging_=-1; return false; }
-        if (e.type==WindowEvent::Type::KeyDown && e.key=='p' && !e.repeat) {
+        if (e.type==WindowEvent::Type::KeyDown && e.key==kKeyTab && !e.repeat) {
             open_=!open_; dragging_=-1; return true;
         }
         if (captured) { dragging_=-1; return false; }
@@ -72,11 +69,7 @@ public:
             change(room,l,dragging_,e.x,0); return true;
         }
         if (e.type!=WindowEvent::Type::MouseDown || e.button!=1) return false;
-        if (!open_) {
-            const int x=(width-330)/2, y=std::max(0,height-37);
-            if (e.x>=x && e.x<x+330 && e.y>=y && e.y<y+29) { open_=true; return true; }
-            return false;
-        }
+        if (!open_) return false;
         if (e.x<l.x || e.x>=l.x+l.w || e.y<l.y || e.y>=l.y+l.h) return false;
         const double x=e.x-l.x,y=e.y-l.y;
         if (y>=30 && y<55) {
@@ -107,20 +100,36 @@ private:
         return {(width-w)/2,std::max(4,height-h-12),w,h,wide?w/2:w,wide,compact};
     }
     static void button(NativeFrame& f,int x,int y,int w,const char* text) {
-        f.blendRectangle(x,y,w,24,colorHex("#44657b"),0.72);
-        drawTextPixels(f,x+4,y+2,text,colorHex("#e0effb"),20);
+        f.blendRectangle(x,y,w,24,colorHex(hexRgb("#44657b")),0.72);
+        drawTextPixels(f,x+4,y+2,text,colorHex(hexRgb("#e0effb")),20);
     }
     void change(SkeletonRoom& room,const Layout& l,int row,double x,int step) {
-        auto profile=room.comparison(male_).profile();
-        if (step) {
-            if (row==0) profile.height+=step;
-            else profile.multiplier[row]+=step*0.02;
-        } else {
+        const auto& comparison=room.comparison(male_);
+        auto profile=comparison.profile();
+        const double oldHeight=profile.height;
+        double fraction=0;
+        if (!step) {
             const int column=l.wide ? row/4 : 0;
             const double start=l.x+column*l.colWidth+130;
-            const double fraction=std::clamp((x-start)/(l.colWidth-230),0.0,1.0);
-            if (row==0) profile.height=40+190*fraction;
-            else profile.multiplier[row]=0.5+fraction;
+            fraction=std::clamp((x-start)/(l.colWidth-230),0.0,1.0);
+        }
+        if (row==0) {
+            profile.height=step ? std::max(50.0,profile.height+step) : 50+180*fraction;
+            // Keep each existing offset in SD units when height changes.
+            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+                const auto before=comparison.dimensionLimits(d,oldHeight);
+                const auto after=comparison.dimensionLimits(d,profile.height);
+                if (!before || !after) { status_="Cannot fit; shape unchanged."; return; }
+                const double offset=before->center*(profile.multiplier[d]-1.0);
+                profile.multiplier[d]=std::clamp(after->center+offset,after->minimum,after->maximum)/after->center;
+            }
+        } else {
+            const auto limits=comparison.dimensionLimits(row,profile.height);
+            if (!limits) { status_="Cannot fit; shape unchanged."; return; }
+            const double current=limits->center*profile.multiplier[row];
+            const double value=step ? current+step*0.1*limits->sd
+                                    : limits->minimum+fraction*(limits->maximum-limits->minimum);
+            profile.multiplier[row]=std::clamp(value,limits->minimum,limits->maximum)/limits->center;
         }
         std::string error;
         if (!room.setComparison(male_,profile,error)) status_="Cannot fit; shape unchanged.";

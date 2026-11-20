@@ -53,6 +53,26 @@ def main():
     script, sources, objects, problems = windows_scripts()
     failures.extend(problems)
 
+    # Keep every build on C++20; the compiler reports unsupported options.
+    for path, flag in [('build.sh', '-std=c++20'),
+                       ('native/build.sh', '-std=c++20'),
+                       ('native/vendor/bullet/build.sh', '-std=c++20'),
+                       ('build.cmd', '/std:c++20'),
+                       ('native/build.cmd', '/std:c++20'),
+                       ('native/vendor/bullet/build.cmd', '/std:c++20')]:
+        # The vendored dependencies are not in every checkout -- the phone build
+        # and the CI checkout fetch them separately -- so an absent one is not a
+        # failure here. Everything else must exist, or the check below silently
+        # passes because there is nothing to read.
+        if not (ROOT / path).exists() and path.startswith('native/vendor/'):
+            continue
+        text = (ROOT / path).read_text(errors='replace')
+        if flag not in text or re.search(r'(?:-std=|/std:)c\+\+(?:17|23|latest)', text):
+            failures.append(f'{path} must use {flag}, not another C++ mode')
+        if path.endswith('.cmd') and '/options:strict' not in text:
+            failures.append(f'{path} must pass C++20 options directly to the compiler')
+        if re.search(r'cpp(?:20|23)_mode\.cpp|where\s+cl\.exe', text, re.IGNORECASE):
+            failures.append(f'{path} must not preflight the compiler or its version')
     for source in sorted(sources):
         if not (ROOT / source).exists():
             failures.append(f'build.cmd compiles a file that is not there: {source}')
@@ -74,8 +94,16 @@ def main():
     for source in sorted(linux_sources):
         if not (ROOT / source).exists():
             failures.append(f'build.sh compiles a file that is not there: {source}')
+    # The window backends are one each, by nature. The rest of these are Linux-only
+    # on purpose: the portrait fitter and the two-client network smoke run are built
+    # and run here, from build.sh, and never on the machine that only plays the game.
+    # Building them for Windows meant an object nobody linked and a binary nobody
+    # started, so they are absent there and that is not a disagreement between the
+    # two lists.
+    linux_only_names = {'window_x11.cpp', 'fit.cpp', 'io.cpp', 'render.cpp', 'main.cpp',
+                        'smoke.cpp', 'smoke_motion.cpp'}
     only_windows = {source for source in sources if source.split('/')[-1] in {'window_win32.cpp'}}
-    only_linux = {source for source in linux_sources if source.split('/')[-1] in {'window_x11.cpp'}}
+    only_linux = {source for source in linux_sources if source.split('/')[-1] in linux_only_names}
     for source in sorted(linux_sources - sources - only_linux):
         failures.append(f'build.sh has {source}, build.cmd does not')
     for source in sorted(sources - linux_sources - only_windows):
@@ -96,6 +124,7 @@ def main():
     failures.extend(nested_type_failures(['native/client/window_win32.cpp',
                                           'native/client/window_x11.cpp']))
     failures.extend(windows_interface_keyword_failures())
+    failures.extend(mangled_object_failures())
 
     if failures:
         for failure in failures:
@@ -104,6 +133,52 @@ def main():
         return 1
     print(f'build scripts: PASS ({len(sources)} client sources, {len(objects)} linked objects, both platforms agree)')
     return 0
+
+
+def mangled_object_failures():
+    """Every object handed to the linker must be a whole path, on both platforms.
+
+    Two ways this has already gone wrong, both of which only the linker noticed
+    on the machine that builds for Windows:
+
+      * two objects pasted into one pair of quotes, so the linker is asked for a
+        file whose name contains a space and a second path;
+      * an object whose %ROOT%\\build\\obj\\native-client\\ prefix was dropped in
+        an edit, so the linker looks for `vk_device.obj` in whatever directory
+        the build happened to run from.
+
+    Neither compiles anything, so they are cheap to check here. System libraries
+    are bare names by design and are allowed.
+    """
+    system_libraries = {'Ws2_32.lib', 'User32.lib', 'Gdi32.lib', 'Opengl32.lib', 'Shell32.lib',
+                        'Ole32.lib', 'libbullet.a'}
+    problems = []
+    script = (ROOT / 'native' / 'build.cmd').read_text(errors='replace')
+    for number, line in enumerate(script.splitlines(), 1):
+        stripped = line.strip()
+        # The common object list is assembled on a `set` line and expanded into
+        # every link, so a broken path hides there as easily as on a cl.exe line.
+        if not (stripped.startswith('cl.exe') or stripped.startswith('set "CLIENT_COMMON=')):
+            continue
+        for token in stripped.replace('"', ' ').split():
+            # The assignment itself is not a file: drop the name and the `=`.
+            token = token.split('=', 1)[1] if token.startswith('CLIENT_COMMON=') else token
+            if not token or token == 'set':
+                continue
+            if token in system_libraries or token.startswith('!') or token.startswith('/'):
+                continue
+            if token.endswith('.obj') and not token.startswith('%ROOT%\\'):
+                problems.append(f'build.cmd line {number}: object without its full path: {token}')
+    shell = (ROOT / 'native' / 'build.sh').read_text(errors='replace')
+    for number, line in enumerate(shell.splitlines(), 1):
+        for token in line.replace('"', ' ').split():
+            if token in system_libraries or token.startswith('$') or token.startswith('!'):
+                continue
+            # A bare name like `raster.o` is the bug; `).o` out of a command
+            # substitution is punctuation, not a filename.
+            if re.fullmatch(r'[\w.-]+\.(?:o|a)', token):
+                problems.append(f'build.sh line {number}: object without its full path: {token}')
+    return problems
 
 
 def narrowing_failures(sources):
@@ -125,7 +200,7 @@ def narrowing_failures(sources):
             continue
         if source.endswith('window_win32.cpp'):
             continue  # needs windows.h, which is not on this machine
-        result = subprocess.run([compiler, '-std=c++17', '-fsyntax-only', '-Werror=narrowing',
+        result = subprocess.run([compiler, '-std=c++20', '-fsyntax-only', '-Werror=narrowing',
                                  '-Isrc', '-Inative', '-Inative/vendor/bullet/src', source],
                                 cwd=ROOT, capture_output=True, text=True)
         if result.returncode != 0:
@@ -146,7 +221,7 @@ def windows_interface_keyword_failures():
     compiler = shutil.which('g++') or shutil.which('c++')
     if compiler is None:
         return []
-    result = subprocess.run([compiler, '-std=c++17', '-Dinterface=struct', '-fsyntax-only',
+    result = subprocess.run([compiler, '-std=c++20', '-Dinterface=struct', '-fsyntax-only',
                              '-Isrc', '-Inative', 'native/client/ui_layer.cpp',
                              'native/vulkan/vk_renderer.cpp'],
                             cwd=ROOT, capture_output=True, text=True)

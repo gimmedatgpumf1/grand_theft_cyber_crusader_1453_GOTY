@@ -15,7 +15,7 @@ static Vec3 transformed(const std::array<double,16>& m, Vec3 p) {
 static std::vector<Vec3> vertices(const SkeletonModel&,const SkeletonComparison& comp,const char* name) {
     for (const auto& part:comp.parts()) if (part.name==name) {
         std::vector<Vec3> out; out.reserve(part.points.size());
-        for (Vec3 p:part.points) out.push_back(comp.map(p,part.armSide,part.cranial,part.girdle,part.humerus));
+        for (Vec3 p:part.points) out.push_back(comp.mapPart(p,part));
         return out;
     }
     assert(false); return {};
@@ -47,25 +47,19 @@ static void check(const SkeletonRoom& room, bool male) {
     // Every actual skull, jaw and C1 vertex must share the same similarity
     // transform. This catches the former kink through the skull, vertical-only
     // stretching of the jaw, and any shift of the jaw relative to the skull.
-    const int headId=model.sourceStructure("Head"), jawId=model.sourceStructure("Jaw");
-    const auto& sourceHead=model.sourceStructures()[headId];
-    const auto& sourceJaw=model.sourceStructures()[jawId];
-    const auto& headGroup=model.bones()[sourceHead.group];
-    const auto& jawGroup=model.bones()[sourceJaw.group];
-    double originalTop=-1e30, originalJaw=1e30;
-    for (std::size_t i=sourceHead.firstPoint;i<sourceHead.firstPoint+sourceHead.pointCount;++i)
-        originalTop=std::max(originalTop,transformed(matrices[headId],headGroup.points[i]).y);
-    for (std::size_t i=sourceJaw.firstPoint;i<sourceJaw.firstPoint+sourceJaw.pointCount;++i)
-        originalJaw=std::min(originalJaw,transformed(matrices[jawId],jawGroup.points[i]).y);
-    const double headScale=c.targets()[SkeletonComparison::Head]/(100*(originalTop-originalJaw));
-    const Vec3 reference=transformed(matrices[headId],headGroup.points[sourceHead.firstPoint]);
-    const Vec3 mappedReference=c.map(reference,0,true);
+    const SkeletonComparison::Part *rawHead=nullptr, *rawJaw=nullptr;
+    for (const auto& part:c.parts()) {
+        if (part.name=="Head") rawHead=&part;
+        if (part.name=="Jaw") rawJaw=&part;
+    }
+    assert(rawHead && rawJaw);
+    const double headScale=c.targets()[SkeletonComparison::Head]/(100*(highY(rawHead->points)-lowY(rawJaw->points)));
+    const Vec3 reference=rawHead->points.front(), mappedReference=c.map(reference,0,true);
     double cranialError=0;
     for (const char* name:{"Head","Jaw","C1"}) {
-        const int id=model.sourceStructure(name); assert(id>=0);
-        const auto& part=model.sourceStructures()[id]; const auto& group=model.bones()[part.group];
-        for (std::size_t i=part.firstPoint;i<part.firstPoint+part.pointCount;++i) {
-            const Vec3 point=transformed(matrices[id],group.points[i]);
+        const auto it=std::find_if(c.parts().begin(),c.parts().end(),[&](const auto& p){return p.name==name;});
+        assert(it!=c.parts().end());
+        for (const Vec3 point:it->points) {
             const Vec3 expected=mappedReference+(point-reference)*headScale;
             cranialError=std::max(cranialError,length(c.map(point,0,true)-expected));
             if (std::string(name)=="C1") assert(length(c.map(point)-c.map(point,0,true))<1e-8);
@@ -236,7 +230,7 @@ static bool gpu(const GpuScene& scene,NativeFrame& frame) {
             const auto batch=std::find_if(scene.batches.begin(),scene.batches.end(),[&](const GpuBatch& b) { return b.objectId==id; });
             assert(batch!=scene.batches.end() && batch->vertices.size()==part.points.size());
             for (std::size_t i=0;i<part.points.size();++i) {
-                Vec3 expected=copy.map(part.points[i],part.armSide,part.cranial,part.girdle,part.humerus);
+                Vec3 expected=copy.mapPart(part.points[i],part);
                 expected.x+=sex==0?-2.85:2.85;
                 const auto& v=batch->vertices[i];
                 assert(length(Vec3{v.x,v.y,v.z}-expected)<1e-5);
@@ -250,13 +244,22 @@ int main() {
     std::string error; SkeletonRoom room; assert(room.load(".",error));
     const auto maleOriginal=room.male().sourceMatrices({},0), femaleOriginal=room.female().sourceMatrices({},0);
     observedRoom=&room; originalMatrices[0]=maleOriginal; originalMatrices[1]=femaleOriginal;
-    check(room,true); check(room,false);
+    for (bool male:{true,false}) {
+        const auto& copy=room.comparison(male);
+        const double height=male?172.2:159.4;
+        close(copy.profile().height,height,1e-10);
+        const auto formulas=male?maleComparisonFormulas(height):femaleComparisonFormulas(height);
+        assert(formulas);
+        for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d)
+            close(copy.requestedTargets()[d],(*formulas)[d-1],1e-10);
+        check(room,male); // Also measures the actual floor-to-skull geometry.
+    }
     for (bool male:{true,false}) {
         auto p=room.comparison(male).profile();
-        for (double h:{1.,5.,10.,50.,100.,140.,170.,200.,250.,400.,1000.}) {
+        for (double h:{1.,5.,10.,49.999,50.,100.,140.,170.,200.,250.,400.,1e308}) {
             p.height=h;
             const auto previous=room.comparison(male).profile();
-            if (h<=10 || h==1000) {
+            if (h<50 || h==1e308) {
                 const auto oldTargets=room.comparison(male).targets();
                 const auto oldRequested=room.comparison(male).requestedTargets();
                 const auto oldRevision=room.comparison(male).revision();
@@ -267,7 +270,7 @@ int main() {
                 assert(room.comparison(male).requestedTargets()==oldRequested);
                 assert(room.comparison(male).revision()==oldRevision);
                 assert(length(room.comparison(male).map({0.1,1.4,0.02})-oldPoint)<1e-12);
-                continue; // Requested equations are non-positive or incompatible here.
+                continue; // Below the height limit or incompatible geometry.
             }
             if (!room.setComparison(male,p,error)) { std::printf("height %g failed: %s\n",h,error.c_str()); std::abort(); }
             check(room,male);
@@ -285,7 +288,17 @@ int main() {
             assert(std::abs(fitted50[d]-requested50[d])<1e-8);
         close(fitted50[SkeletonComparison::Torso]-requested50[SkeletonComparison::Torso],
               fitted50[SkeletonComparison::Leg]-requested50[SkeletonComparison::Leg],1e-8);
-        room.resetComparison(male); close(room.comparison(male).profile().height,room.comparison(male).initialHeight());
+        room.resetComparison(male);
+        const auto& reset=room.comparison(male);
+        const double defaultHeight=male?172.2:159.4;
+        close(reset.profile().height,defaultHeight,1e-10);
+        const auto defaults=male?maleComparisonFormulas(defaultHeight):femaleComparisonFormulas(defaultHeight);
+        assert(defaults);
+        for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+            close(reset.profile().multiplier[d],1.0,1e-10);
+            close(reset.requestedTargets()[d],(*defaults)[d-1],1e-10);
+        }
+        check(room,male);
         for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
             p=room.comparison(male).profile(); p.multiplier[d]=1.02;
             assert(room.setComparison(male,p,error)); check(room,male); room.resetComparison(male);
@@ -362,7 +375,7 @@ int main() {
         }
         // No visible jump at the child/adult and infant bridge boundaries.
         for (double boundary:{8.,9.,10.,11.,12.,50.,100.,male?160.:145.,male?175.:160.,male?190.:175.}) {
-            if (boundary<13) continue; // One or both specified leg equations are non-positive.
+            if (boundary<=50) continue; // Both samples must be within the height limit.
             p=room.comparison(male).profile();p.height=boundary-0.00001;assert(room.setComparison(male,p,error));
             const std::array<Vec3,3> points{{{0.1,1.4,0.02},{0.1,1.6,0.02},{0.1,1.7,0.02}}};
             std::array<Vec3,3> before, cranialBefore;
@@ -379,16 +392,8 @@ int main() {
             for (int dimension=0;dimension<SkeletonComparison::Count;++dimension)
                 assert(std::abs(room.comparison(male).targets()[dimension]-targetsBefore[dimension])<0.001);
         }
-        // Audit the extreme-height fallback, including its entry and exit.
-        Vec3 previous{}; bool first=true;
-        for (double h=male?12.:12.3;h<=20;h+=0.1) {
-            p=room.comparison(male).profile(); p.height=h; assert(room.setComparison(male,p,error));
-            const Vec3 point=room.comparison(male).map({0.1,1.4,0.02});
-            if (!first) assert(length(point-previous)<0.001);
-            previous=point; first=false;
-        }
         // Check all seven supplied equations independently over the full range.
-        for (double h=40.;h<=250.;h+=0.5) {
+        for (double h=50.;h<=250.;h+=0.5) {
             p=room.comparison(male).profile(); p.height=h;
             assert(room.setComparison(male,p,error));
             const std::array<double,8> wanted=male
@@ -402,11 +407,63 @@ int main() {
             for (std::size_t i=0;i<t.size();++i) assert(std::abs(t[i]-wanted[i])<1e-8);
         }
         p=room.comparison(male).profile(); p.height=170;
-        p.multiplier[SkeletonComparison::Head]=1.23;
+        p.multiplier[SkeletonComparison::Head]=1.02;
         assert(room.setComparison(male,p,error));
         const double head=male ? 0.0561*170.+12.179 : 0.0568*170.+11.832;
         assert(std::abs(room.comparison(male).requestedTargets()[SkeletonComparison::Head]
-                        -1.23*head)<1e-8);
+                        -1.02*head)<1e-8);
+        room.resetComparison(male);
+    }
+    // Requested dimensions stay inside the sex-specific bounds even for
+    // programmatic requests far outside the UI track. The rigid bone fit may
+    // differ; any genuinely unfit shape must leave the previous state intact.
+    for (bool male:{true,false}) for (double height:{50.,100.,170.,250.}) {
+        auto p=room.comparison(male).profile(); p.height=height;
+        assert(room.setComparison(male,p,error));
+        for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+            for (double multiplier:{1e-6,1e6}) {
+                const auto& c=room.comparison(male);
+                const auto limits=c.dimensionLimits(d,height); assert(limits);
+                close(limits->minimum,std::max(0.001,limits->center-1.5*limits->sd),1e-10);
+                close(limits->maximum,limits->center+1.5*limits->sd,1e-10);
+                const auto old=c.profile(); const auto oldTargets=c.targets();
+                const auto oldRequested=c.requestedTargets(); const auto oldRevision=c.revision();
+                p=old; p.multiplier[d]=multiplier;
+                if (room.setComparison(male,p,error)) {
+                    const double expected=multiplier<1 ? limits->minimum : limits->maximum;
+                    assert(std::abs(c.requestedTargets()[d]-expected)<1e-8);
+                    for (int j=SkeletonComparison::Head;j<SkeletonComparison::Count;++j) {
+                        const auto bound=c.dimensionLimits(j,height); assert(bound);
+                        assert(c.requestedTargets()[j]>=bound->minimum-1e-8 && c.requestedTargets()[j]<=bound->maximum+1e-8);
+                    }
+                } else {
+                    assert(!error.empty() && c.profile().height==old.height && c.profile().multiplier==old.multiplier);
+                    assert(c.targets()==oldTargets && c.requestedTargets()==oldRequested && c.revision()==oldRevision);
+                }
+                p=old; assert(room.setComparison(male,p,error));
+            }
+        }
+        room.resetComparison(male);
+    }
+    // All combinations of the seven slider endpoints must remain reachable,
+    // including when other body parts have already been changed.
+    for (bool male:{true,false}) for (double height:{50.,75.,100.,140.,170.,200.,250.}) {
+        for (int mask=0;mask<128;++mask) {
+            auto p=room.comparison(male).profile(); p.height=height;
+            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+                const auto bound=room.comparison(male).dimensionLimits(d,height); assert(bound);
+                p.multiplier[d]=((mask>>(d-1))&1 ? bound->maximum : bound->minimum)/bound->center;
+            }
+            if (!room.setComparison(male,p,error)) {
+                std::fprintf(stderr,"%s %.1f cm slider mask %d: %s\n",male?"male":"female",height,mask,error.c_str());
+                std::abort();
+            }
+            for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+                const auto bound=room.comparison(male).dimensionLimits(d,height); assert(bound);
+                const double want=(mask>>(d-1))&1 ? bound->maximum : bound->minimum;
+                close(room.comparison(male).requestedTargets()[d],want,1e-8);
+            }
+        }
         room.resetComparison(male);
     }
     // Captured cursor cannot drag; released cursor can drag/reset/select sex.
@@ -415,18 +472,85 @@ int main() {
     auto e=mouse(WindowEvent::Type::MouseDown,x+200,y+60);
     assert(!control.handle(e,true,w,h,room));
     assert(control.handle(e,false,w,h,room));
-    assert(room.comparison(true).profile().height!=room.comparison(true).initialHeight());
+    assert(room.comparison(true).profile().height!=172.2);
     auto move=mouse(WindowEvent::Type::MouseMove,x+250,y+60);
     assert(control.handle(move,false,w,h,room));
     auto up=mouse(WindowEvent::Type::MouseUp,x+600,y-20); assert(control.handle(up,false,w,h,room));
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+880,y+32),false,w,h,room));
-    close(room.comparison(true).profile().height,room.comparison(true).initialHeight());
+    close(room.comparison(true).profile().height,172.2,1e-10);
+    close(room.comparison(false).profile().height,159.4,1e-10);
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+120,y+32),false,w,h,room));
     double femaleBefore=room.comparison(false).profile().height;
     assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+380,y+60),false,w,h,room));
     close(room.comparison(false).profile().height,femaleBefore+1);
+    // Neither the track nor repeated minus clicks can go below 50 cm.
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+130,y+60),false,w,h,room));
+    assert(control.handle(mouse(WindowEvent::Type::MouseUp,x+130,y+60),false,w,h,room));
+    close(room.comparison(false).profile().height,50.,1e-10);
+    for (int i=0;i<3;++i)
+        assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+110,y+60),false,w,h,room));
+    close(room.comparison(false).profile().height,50.,1e-10);
     assert(!control.handle(mouse(WindowEvent::Type::MouseDown,0,0),false,w,h,room));
-    room.resetComparison(false);
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+880,y+32),false,w,h,room));
+    close(room.comparison(false).profile().height,159.4,1e-10);
+    close(room.comparison(true).profile().height,172.2,1e-10);
+    check(room,false);
+    // The track spans the calculated SD limits, plus cannot pass the end, and
+    // changing height preserves the chosen offset in centimetres/SD units.
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+20,y+32),false,w,h,room));
+    auto headProfile=room.comparison(true).profile(); headProfile.height=170;
+    assert(room.setComparison(true,headProfile,error));
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+370,y+87),false,w,h,room));
+    assert(control.handle(mouse(WindowEvent::Type::MouseUp,x+370,y+87),false,w,h,room));
+    const auto headBounds=room.comparison(true).dimensionLimits(SkeletonComparison::Head,170); assert(headBounds);
+    close(room.comparison(true).requestedTargets()[SkeletonComparison::Head],headBounds->maximum,1e-7);
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+380,y+87),false,w,h,room));
+    close(room.comparison(true).requestedTargets()[SkeletonComparison::Head],headBounds->maximum,1e-7);
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+380,y+60),false,w,h,room));
+    close(room.comparison(true).profile().height,171,1e-7);
+    const auto movedBounds=room.comparison(true).dimensionLimits(SkeletonComparison::Head,171); assert(movedBounds);
+    close(room.comparison(true).requestedTargets()[SkeletonComparison::Head]-movedBounds->center,1.5*movedBounds->sd,1e-7);
+    room.resetComparison(true);
+    auto shortProfile=room.comparison(true).profile(); shortProfile.height=50;
+    assert(room.setComparison(true,shortProfile,error));
+    const double armCenter=room.comparison(true).requestedTargets()[SkeletonComparison::Arm];
+    assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+600,y+60),false,w,h,room));
+    assert(control.handle(mouse(WindowEvent::Type::MouseUp,x+600,y+60),false,w,h,room));
+    // Dragging to the minimum must reach the requested end of the range.
+    const auto armLimits=room.comparison(true).dimensionLimits(SkeletonComparison::Arm,50); assert(armLimits);
+    assert(room.comparison(true).requestedTargets()[SkeletonComparison::Arm] < armCenter);
+    close(room.comparison(true).requestedTargets()[SkeletonComparison::Arm],armLimits->minimum,1e-8);
+    // The almost-zero request is shorter than this pose's fixed endpoint
+    // offsets. The slider remains reachable and reports the fitted chord.
+    assert(room.comparison(true).targets()[SkeletonComparison::Arm] > armLimits->minimum);
+    assert(!room.comparison(true).exact());
+    room.resetComparison(true);
+    // Exercise real pointer input after changing several other sliders. Each
+    // drag reaches its chosen SD endpoint without a hidden bone-fit restriction.
+    for (bool male:{true,false}) for (double height:{50.,170.,250.}) {
+        assert(control.handle(mouse(WindowEvent::Type::MouseDown,x+(male?20:120),y+32),false,w,h,room));
+        room.resetComparison(male);
+        auto profile=room.comparison(male).profile(); profile.height=height;
+        assert(room.setComparison(male,profile,error));
+        for (int pass=0;pass<2;++pass) for (int d=SkeletonComparison::Head;d<SkeletonComparison::Count;++d) {
+            const auto before=room.comparison(male).requestedTargets();
+            const double fittedBefore=room.comparison(male).targets()[d];
+            const auto limits=room.comparison(male).dimensionLimits(d,height); assert(limits);
+            const int sx=x+(d/4)*470+(pass?370:130), sy=y+59+(d%4)*27+1;
+            assert(control.handle(mouse(WindowEvent::Type::MouseDown,sx,sy),false,w,h,room));
+            assert(control.handle(mouse(WindowEvent::Type::MouseUp,sx,sy),false,w,h,room));
+            const auto& after=room.comparison(male).requestedTargets();
+            close(after[d],pass?limits->maximum:limits->minimum,1e-8);
+            if (std::abs(before[d]-after[d])>1e-8 &&
+                std::abs(room.comparison(male).targets()[d]-fittedBefore)<1e-8) {
+                std::fprintf(stderr,"%s %.1f cm dimension %d did not move on pass %d\n",male?"male":"female",height,d,pass);
+                std::abort();
+            }
+            for (int j=SkeletonComparison::Head;j<SkeletonComparison::Count;++j)
+                if (j!=d) close(after[j],before[j],1e-8);
+        }
+        room.resetComparison(male);
+    }
     // At a compact window size the second set of four controls remains reachable.
     SkeletonComparisonUi compact; constexpr int sw=320, sh=240, sx=8, sy=33;
     assert(compact.handle(WindowEvent{WindowEvent::Type::KeyDown,'p'},true,sw,sh,room));

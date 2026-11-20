@@ -1,15 +1,28 @@
 #pragma once
-
+#include "client/skeleton_original_toe_reference.h"
 // A visual comparison, not an anatomical reconstruction. The reference curves
 // describe skin landmarks; the available landmarks below are skeletal proxies.
 // See COMPARISON_SLIDERS.md for the definitions and limitations.
 #include "client/skeleton_body.h"
+#include "client/skeleton_toe_skin.h"
+#include "client/skeleton_makehuman_draw.h"
+#include "client/skeleton_metatarsal_plane.h"
+#include "client/skeleton_medial_plane.h"
+#include "client/skeleton_heel_planes.h"
+#include "client/skeleton_sole.h"
+#include "client/skeleton_foot_stitch.h"
 #include "client/skeleton_bilateral.h"
+#include "client/skeleton_standing_foot.h"
+#include "client/skeleton_toe_mirror.h"
+#include "client/skeleton_toe_attachment.h"
+#include "client/skeleton_surface_average.h"
+#include "client/skull_midplane.h"
+#include "client/vertebra_midplane.h"
 #include "client/body_proportion_curves.h"
 #include "client/height_body_reference.h"
 #include "client/male_comparison_formulas.h"
 #include "client/female_comparison_formulas.h"
-
+#include "client/comparison_standard_deviations.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -18,288 +31,19 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
 namespace gtc::native {
-
 class SkeletonComparison {
 public:
     enum Dimension { Height, Head, Neck, Torso, Arm, Leg, Hip, Shoulder, Count };
     struct Part {
         std::string name; std::vector<Vec3> points; std::vector<std::array<int,3>> faces;
         int armSide = 0; bool cranial = false; bool girdle = false; bool humerus = false;
+        bool vertebra = false; Vec3 vertebraAnchor{},vertebraNormal{},vertebraUp{},vertebraForward{};
+        Vec3 mappedAnchor{},mappedNormal{},mappedUp{},mappedForward{},jointClearance{},mappedClearance{};
+        double mappedNormalScale=1;
     };
-    struct Profile {
-        double height = 0;
-        std::array<double, Count> multiplier{1,1,1,1,1,1,1,1};
-    };
-
-    bool load(const SkeletonModel& model, bool male, const std::string& directory, std::string& error) {
-        male_ = male;
-        const auto matrices = model.sourceMatrices({}, 0);
-        parts_.clear();
-        for (std::size_t i=0; i<matrices.size(); ++i) {
-            const auto& source = model.sourceStructures()[i];
-            const auto& group = model.bones()[source.group];
-            Part part; part.name=source.name;
-            part.cranial=part.name=="Head" || part.name=="Jaw" || part.name=="C1";
-            part.girdle=part.name.rfind("Scapula_",0)==0 || part.name.rfind("Clavicula_",0)==0;
-            part.humerus=part.name.rfind("Humerus_",0)==0;
-            if (part.name.rfind("Humerus_",0)==0 || part.name.rfind("Radius_",0)==0 ||
-                part.name.rfind("Ulna_",0)==0 || part.name.rfind("Hand",0)==0) {
-                if (part.name.size()>2 && part.name.substr(part.name.size()-2)=="_L") part.armSide=1;
-                if (part.name.size()>2 && part.name.substr(part.name.size()-2)=="_R") part.armSide=-1;
-            }
-            part.points.reserve(source.pointCount);
-            for (std::size_t p=source.firstPoint; p<source.firstPoint+source.pointCount; ++p)
-                part.points.push_back(transform(matrices[i],group.points[p]));
-            part.faces.reserve(source.triangleCount);
-            for (std::size_t f=source.firstTriangle; f<source.firstTriangle+source.triangleCount; ++f) {
-                auto face=group.triangles[f];
-                for (int& vertex:face) vertex-=static_cast<int>(source.firstPoint);
-                part.faces.push_back(face);
-            }
-            parts_.push_back(std::move(part));
-        }
-        double originalFloor=1e30,originalTop=-1e30;
-        for (const auto& part:parts_) for (Vec3 p:part.points) {
-            originalFloor=std::min(originalFloor,p.y);
-            if (part.name=="Head") originalTop=std::max(originalTop,p.y);
-        }
-        initialHeight_=(originalTop-originalFloor)*100;
-        const std::string sex=male?"male":"female";
-        // The same geometric hip/head estimates used by the reference rig.
-        auto landmarks=[&](const std::string& suffix, const std::string& bone, std::array<Vec3,2>& out) {
-            std::ifstream in(directory+"skeleton-"+sex+suffix); std::string line; bool seen[2]={false,false};
-            while (std::getline(in,line)) {
-                if (line.empty() || line[0]=='#') continue;
-                std::istringstream row(line); char side; Vec3 p; double radius;
-                if (!(row>>side>>p.x>>p.y>>p.z>>radius)) return false;
-                const int index=model.sourceStructure(bone+"_"+side);
-                if (index<0 || (side!='L' && side!='R')) return false;
-                const int slot=side=='L'?0:1; if (seen[slot]) return false; seen[slot]=true;
-                out[slot]=transform(matrices[static_cast<std::size_t>(index)],p);
-            }
-            return bool(in.eof()) && seen[0] && seen[1];
-        };
-        std::array<Vec3,2> hips, shoulders, elbows;
-        if (!landmarks(".hips","Femur",hips) || !landmarks(".shoulders","Humerus",shoulders) ||
-            !landmarks(".elbows","Humerus",elbows)) {
-            error="Comparison joint estimates could not be loaded"; return false;
-        }
-        // Average the anatomical leg length before reflecting the paired
-        // surfaces. Original/white meshes and their rig are never modified.
-        const double axis=(hips[0].x+hips[1].x)*0.5;
-        const double hipLevel=(hips[0].y+hips[1].y)*0.5;
-        auto leg=[](const std::string& name) {
-            return name.rfind("Femur_",0)==0 || name.rfind("Patella_",0)==0 ||
-                   name.rfind("Tibia_",0)==0 || name.rfind("Fibula_",0)==0 ||
-                   name.rfind("Foot",0)==0 || name.rfind("Tal_",0)==0 ||
-                   name.rfind("Cal_",0)==0 || name.rfind("Nav_",0)==0 ||
-                   name.rfind("Cub_",0)==0 || name.rfind("MedCun_",0)==0 ||
-                   name.rfind("InterCun_",0)==0 || name.rfind("LatCun_",0)==0;
-        };
-        std::array<double,2> soles{1e30,1e30};
-        for (const auto& part:parts_) if (leg(part.name) && part.name.size()>2) {
-            const std::string suffix=part.name.substr(part.name.size()-2);
-            if (suffix!="_L" && suffix!="_R") continue;
-            const int side=suffix=="_L"?0:1;
-            for (Vec3 p:part.points) soles[side]=std::min(soles[side],p.y);
-        }
-        const double meanLength=((hips[0].y-soles[0])+(hips[1].y-soles[1]))*0.5;
-        if (!(meanLength>0 && hips[0].y>soles[0] && hips[1].y>soles[1])) {
-            error="Comparison leg landmarks are invalid"; return false;
-        }
-        for (auto& part:parts_) if (leg(part.name) && part.name.size()>2) {
-            const std::string suffix=part.name.substr(part.name.size()-2);
-            if (suffix!="_L" && suffix!="_R") continue;
-            const int side=suffix=="_L"?0:1;
-            const double factor=meanLength/(hips[side].y-soles[side]);
-            for (Vec3& p:part.points) p.y=hipLevel+(p.y-hips[side].y)*factor;
-        }
-        // Preserve the mean pubic spacing of the two registered innominates.
-        double leftPubis=1e30,rightPubis=-1e30;
-        for (const auto& part:parts_) {
-            if (part.name=="Pelvis_L") for (Vec3 p:part.points) leftPubis=std::min(leftPubis,p.x);
-            if (part.name=="Pelvis_R") for (Vec3 p:part.points) rightPubis=std::max(rightPubis,p.x);
-        }
-        const double meanPubicHalfGap=(leftPubis-rightPubis)*0.5;
-        for (auto& left:parts_) {
-            if (left.name.size()<2 || left.name.substr(left.name.size()-2)!="_L") continue;
-            const std::string rightName=left.name.substr(0,left.name.size()-2)+"_R";
-            auto it=std::find_if(parts_.begin(),parts_.end(),[&](const Part& p) { return p.name==rightName; });
-            if (it==parts_.end()) { error="Comparison side is missing its opposite"; return false; }
-            std::vector<Vec3> reflected; reflected.reserve(it->points.size());
-            for (Vec3 p:it->points) { p.x=2*axis-p.x; reflected.push_back(p); }
-            if (!bilateral::average(left.points,reflected,left.faces,left.name.rfind("Scapula_",0)==0)) {
-                error="Comparison side has an empty mesh"; return false;
-            }
-            it->points=left.points;
-            for (Vec3& p:it->points) p.x=2*axis-p.x;
-            it->faces=left.faces;
-            for (auto& face:it->faces) std::swap(face[1],face[2]);
-        }
-        auto mutablePart=[&](const std::string& name)->Part* {
-            for (auto& part:parts_) if (part.name==name) return &part;
-            return nullptr;
-        };
-        // The axial sternum is also centered and mirrored; the skull and jaw
-        // deliberately retain their common source geometry and contacts.
-        if (Part* sternum=mutablePart("Sternum")) {
-            std::vector<Vec3> opposite; opposite.reserve(sternum->points.size());
-            for (Vec3 p:sternum->points) { p.x=2*axis-p.x; opposite.push_back(p); }
-            if (!bilateral::average(sternum->points,opposite,sternum->faces) ||
-                !bilateral::mirrorAxial(sternum->points,sternum->faces,axis)) {
-                error="Comparison sternum could not be averaged"; return false;
-            }
-        }
-        Part* meanPelvis=mutablePart("Pelvis_L");
-        Part* meanSacrum=mutablePart("Sacrum");
-        if (!meanPelvis || !meanSacrum) { error="Comparison pelvic ring is missing"; return false; }
-        std::vector<Vec3> reflectedSacrum; reflectedSacrum.reserve(meanSacrum->points.size());
-        for (Vec3 p:meanSacrum->points) { p.x=2*axis-p.x; reflectedSacrum.push_back(p); }
-        if (!bilateral::average(meanSacrum->points,reflectedSacrum,meanSacrum->faces) ||
-            !bilateral::mirrorAxial(meanSacrum->points,meanSacrum->faces,axis)) {
-            error="Comparison sacrum could not be averaged"; return false;
-        }
-        double medial=1e30; for (Vec3 p:meanPelvis->points) medial=std::min(medial,p.x);
-        const double outward=axis+meanPubicHalfGap-medial;
-        // These source-specific registrations were fitted to the two shipped
-        // pelvic surfaces, retaining their L5 contact. Sacrum width and its
-        // vertical/depth offset are fitted symmetrically; this is not a
-        // clinical model and must be re-audited if the source meshes change.
-        const double sacralWidth=male?1.01195186:1.03691149;
-        const Vec3 sacralFit=male?Vec3{0,0.00061292,-0.00065923}
-                                  :Vec3{0,-0.00401286,-0.00456522};
-        const Vec3 hipFit=male?Vec3{-0.000484,-0.001431,0.001137}:Vec3{};
-        const Vec3 kneeFit=male?Vec3{0.000065,-0.001386,0.000294}
-                                :Vec3{-0.000139,-0.001910,0.000217};
-        const Vec3 scapulaFit=male?Vec3{0.005501,-0.004520,-0.003794}
-                                  :Vec3{-0.005611,0.000206,-0.001211};
-        for (auto& part:parts_) {
-            if (part.name=="Sacrum") for (Vec3& p:part.points) {
-                p.x=axis+(p.x-axis)*sacralWidth; p+=sacralFit;
-            }
-            if (part.name.size()<2) continue;
-            const std::string suffix=part.name.substr(part.name.size()-2);
-            if (suffix!="_L" && suffix!="_R") continue;
-            const int side=suffix=="_L"?1:-1;
-            if (part.name.rfind("Scapula_",0)==0)
-                for (Vec3& p:part.points) { p.x+=side*scapulaFit.x; p.y+=scapulaFit.y; p.z+=scapulaFit.z; }
-            if (part.name.rfind("Pelvis_",0)==0 || leg(part.name))
-                for (Vec3& p:part.points) p.x+=side*outward;
-            if (leg(part.name)) for (Vec3& p:part.points) {
-                p.x+=side*hipFit.x; p.y+=hipFit.y; p.z+=hipFit.z;
-                if (part.name.rfind("Femur_",0)!=0 && part.name.rfind("Patella_",0)!=0) {
-                    p.x+=side*kneeFit.x; p.y+=kneeFit.y; p.z+=kneeFit.z;
-                }
-            }
-        }
-        // Regularisation can change which foot vertex is lowest. Reapply the
-        // exact bilateral mean hip-to-floor length to the complete legs.
-        double balancedSole=1e30;
-        for (const auto& part:parts_) if (leg(part.name))
-            for (Vec3 p:part.points) balancedSole=std::min(balancedSole,p.y);
-        const double balancedHip=hipLevel+hipFit.y;
-        const double finalLegScale=meanLength/(balancedHip-balancedSole);
-        if (!std::isfinite(finalLegScale) || finalLegScale<=0) {
-            error="Comparison averaged leg length is invalid"; return false;
-        }
-        for (auto& part:parts_) if (leg(part.name))
-            for (Vec3& p:part.points) p.y=balancedHip+(p.y-balancedHip)*finalLegScale;
-        const double hipDepth=(hips[0].z+hips[1].z)*0.5+hipFit.z;
-        hips[0].x+=outward+hipFit.x; hips[1].x-=outward+hipFit.x;
-        hips[0].y+=hipFit.y; hips[1].y+=hipFit.y;
-        hips[0].z=hipDepth; hips[1].z=hipDepth;
-        hipCenters_=hips;
-        auto named=[&](const std::string& name)->const Part* {
-            for (const auto& part:parts_) if (part.name==name) return &part;
-            return nullptr;
-        };
-        const Part* head=named("Head"), *jaw=named("Jaw"), *atlas=named("C1");
-        const Part *pelvisL=named("Pelvis_L"), *pelvisR=named("Pelvis_R"), *sacrum=named("Sacrum");
-        const Part *scapL=named("Scapula_L"), *scapR=named("Scapula_R");
-        const Part *humerusL=named("Humerus_L"), *humerusR=named("Humerus_R");
-        const Part *fingerL=named("HandDistP3_L"), *fingerR=named("HandDistP3_R");
-        const Part *radiusL=named("Radius_L");
-        if (!head || !jaw || !atlas || !pelvisL || !pelvisR || !sacrum || !scapL || !scapR ||
-            !humerusL || !humerusR || !fingerL || !fingerR || !radiusL) {
-            error="Comparison skeleton is missing a landmark structure"; return false;
-        }
-        auto lo=[](const Part* p,int axis) { double v=1e30; for (Vec3 q:p->points) v=std::min(v,axis==0?q.x:q.y); return v; };
-        auto hi=[](const Part* p,int axis) { double v=-1e30; for (Vec3 q:p->points) v=std::max(v,axis==0?q.x:q.y); return v; };
-        floor_=1e30; for (const auto& part:parts_) for (Vec3 p:part.points) floor_=std::min(floor_,p.y);
-        top_=hi(head,1); jaw_=lo(jaw,1);
-        // The atlas joins the common torso field at its lowest vertex. The
-        // jaw uses the cranial transform even if its front is below the C7.
-        cranialJoin_=lo(atlas,1);
-        pelvis_=std::min(lo(pelvisL,1),lo(pelvisR,1));
-        pelvisTop_=std::max(hi(pelvisL,1),hi(pelvisR,1));
-        scapBottom_=std::min(lo(scapL,1),lo(scapR,1));
-        scapTop_=std::max(hi(scapL,1),hi(scapR,1));
-        hipWidth_=std::max(hi(pelvisL,0),hi(pelvisR,0))-std::min(lo(pelvisL,0),lo(pelvisR,0));
-        shoulderWidth_=std::max(hi(scapL,0),hi(scapR,0))-std::min(lo(scapL,0),lo(scapR,0));
-        hipY_={hips[0].y,hips[1].y};
-        hip_=(hipY_[0]+hipY_[1])*0.5;
-        centerX_=axis;
-        const Vec3 shoulderMean={(shoulders[0].x+2*axis-shoulders[1].x)*0.5,
-                                 (shoulders[0].y+shoulders[1].y)*0.5,
-                                 (shoulders[0].z+shoulders[1].z)*0.5};
-        armAnchor_[0]=shoulderMean;
-        armAnchor_[1]={2*axis-shoulderMean.x,shoulderMean.y,shoulderMean.z};
-        Vec3 elbowMean={(elbows[0].x+2*axis-elbows[1].x)*0.5,
-                        (elbows[0].y+elbows[1].y)*0.5,
-                        (elbows[0].z+elbows[1].z)*0.5};
-        // The closest radius/humerus surfaces in the reconstructed mesh are
-        // the appropriate x anchor for forearm scaling. The original axis can
-        // be displaced by averaging and would let a short forearm cross the
-        // humerus even though both halves still look symmetric.
-        bilateral::PointTree humerusTree(humerusL->points);
-        double closest=1e30;
-        for (Vec3 p:radiusL->points) {
-            const Vec3 q=humerusTree.nearest(p); const double d=dot(q-p,q-p);
-            if (d<closest) { closest=d; elbowMean.x=p.x; }
-        }
-        elbowAnchor_[0]=elbowMean;
-        elbowAnchor_[1]={2*axis-elbowMean.x,elbowMean.y,elbowMean.z};
-        auto extreme=[](const Part* part,int side)->Vec3 {
-            Vec3 result=part->points.front();
-            for (Vec3 p:part->points) if (side*p.x>side*result.x) result=p;
-            return result;
-        };
-        armStart_[0]=extreme(humerusL,-1); armStart_[1]=extreme(humerusR,1);
-        armEnd_[0]=extreme(fingerL,1); armEnd_[1]=extreme(fingerR,-1);
-        // Published audit landmarks are in the registered source frame; apply
-        // the exact T-pose matrices before using them as visual proxies.
-        std::ifstream audit(directory+"anthropometry/SKELETON_NECK_SKULL_CONTACT.tsv");
-        std::string row; std::getline(audit,row); int matches=0; neck_=0; neckZ_=0;
-        while (std::getline(audit,row)) {
-            std::istringstream fields(row); std::vector<std::string> cols; std::string field;
-            while (std::getline(fields,field,'\t')) cols.push_back(field);
-            if (cols.size()<15 || cols[1]!=sex) continue;
-            if (matches>=2) { error="Duplicate comparison neck landmarks"; return false; }
-            try {
-                Vec3 c{std::stod(cols[3]),std::stod(cols[4]),std::stod(cols[5])};
-                Vec3 n{std::stod(cols[12]),std::stod(cols[13]),std::stod(cols[14])};
-                int ci=model.sourceStructure("C7"), ni=model.sourceStructure("C1");
-                if (ci<0 || ni<0) break;
-                c7_=transform(matrices[ci],c).y;
-                const Vec3 posedContact=transform(matrices[ni],n);
-                neck_+=posedContact.y; neckZ_+=posedContact.z; ++matches;
-            } catch (...) { break; }
-        }
-        if (matches!=2) { error="Comparison neck landmarks unavailable"; return false; }
-        neck_/=matches; neckZ_/=matches;
-        if (!(floor_<pelvis_ && pelvis_<hip_ && hip_<c7_ && c7_<jaw_ && jaw_<neck_ && neck_<top_) ||
-            !(pelvisTop_<scapBottom_ && scapTop_<cranialJoin_ && c7_<cranialJoin_ && cranialJoin_<neck_) ||
-            !(lo(sacrum,1)>=pelvis_ && hi(sacrum,1)<=pelvisTop_ &&
-              hipY_[0]>=pelvis_ && hipY_[0]<=pelvisTop_ && hipY_[1]>=pelvis_ && hipY_[1]<=pelvisTop_) ||
-            hipWidth_<=0 || shoulderWidth_<=0) {
-            error="Comparison landmarks have an unexpected order"; return false;
-        }
-        profile_=Profile{}; profile_.height=initialHeight_;
-        return update(error);
-    }
-
+    struct Profile { double height = 0; std::array<double, Count> multiplier{1,1,1,1,1,1,1,1}; };
+    bool load(const SkeletonModel& model, bool male, const std::string& directory, std::string& error);
     bool loadCurves(const std::string& directory, std::string& error) {
         return curves_.load(directory+"BODY_PART_CURVE_KNOTS.tsv",error) &&
                curves_.loadSelectedModels(directory+"BODY_PART_SELECTED_MODELS.tsv",error);
@@ -308,24 +52,45 @@ public:
     const std::vector<Part>& parts() const { return parts_; }
     const std::array<Vec3,2>& hipCenters() const { return hipCenters_; }
     double initialHeight() const { return initialHeight_; }
+    double defaultHeight() const { return male_ ? 172.2 : 159.4; }
     const std::array<double,Count>& targets() const { return targets_; }
     const std::array<double,Count>& requestedTargets() const { return requestedTargets_; }
+    struct DimensionLimits { double center, sd, minimum, maximum; };
+    std::optional<DimensionLimits> dimensionLimits(int dimension, double height) const {
+        if (dimension<=Height || dimension>=Count || !std::isfinite(height) || height<50.) return std::nullopt;
+        const auto values=male_ ? maleComparisonFormulas(height) : femaleComparisonFormulas(height);
+        if (!values) return std::nullopt;
+        const double center=(*values)[dimension-1];
+        const double sd=(male_ ? maleComparisonSdCm : femaleComparisonSdCm)[dimension-1];
+        // The formula minus 1.5 SD can be negative, especially at 50 cm. A mesh
+        // cannot have zero or negative dimensions; this is a geometric floor.
+        return DimensionLimits{center,sd,std::max(0.001,center-1.5*sd),center+1.5*sd};
+    }
     bool feasible() const { return feasible_; }
     bool exact() const { return exact_; }
     std::uint64_t revision() const { return revision_; }
     bool setProfile(const Profile& profile, std::string& error) {
-        if (!std::isfinite(profile.height) || profile.height<=0) return false;
-        for (double m:profile.multiplier) if (!std::isfinite(m) || m<=0) return false;
-        if (profile.height==profile_.height && profile.multiplier==profile_.multiplier) { error.clear(); return true; }
-        const auto previous=profile_; const auto previousRevision=revision_; profile_=profile;
+        if (!std::isfinite(profile.height) || profile.height<50.0) {
+            error="Height must be at least 50 cm"; return false;
+        }
+        for (double m:profile.multiplier) if (!std::isfinite(m) || m<=0) {
+            error="Dimensions must be positive and finite"; return false;
+        }
+        Profile limited=profile;
+        for (int d=Head;d<Count;++d) {
+            const auto bounds=dimensionLimits(d,profile.height);
+            if (!bounds || !std::isfinite(bounds->maximum)) { error="Size limits unavailable"; return false; }
+            limited.multiplier[d]=std::clamp(bounds->center*profile.multiplier[d],bounds->minimum,bounds->maximum)/bounds->center;
+        }
+        if (limited.height==profile_.height && limited.multiplier==profile_.multiplier) { error.clear(); return true; }
+        const auto previous=profile_; const auto previousRevision=revision_; profile_=limited;
         if (!update(error)) {
             const std::string reason=error; profile_=previous; std::string ignored;
             update(ignored); revision_=previousRevision; error=reason; return false;
         }
         return true;
     }
-    void reset(std::string& error) { profile_=Profile{}; profile_.height=initialHeight(); update(error); }
-
+    void reset(std::string& error) { profile_=Profile{}; profile_.height=defaultHeight(); update(error); }
     // The skull, jaw and C1 share a single 3D similarity transform. The torso
     // field meets it at the bottom of C1; the jaw can lie lower than C7 because
     // those are distinct anterior/posterior structures, not one vertical chain.
@@ -374,23 +139,309 @@ public:
             depthScale=lerp(heightScale_,headScale_,(sourceY-scapTop_)/(cranialJoin_-scapTop_));
         return {x-centerX_,mapY(sourceY),neckZ_*heightScale_+(p.z-neckZ_)*depthScale};
     }
-    void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000) const {
+    Vec3 mapPart(Vec3 p,const Part& part) const {
+        if (!part.vertebra || part.cranial) {
+            Vec3 mapped=map(p,part.armSide,part.cranial,part.girdle,part.humerus);
+            mapped.y=comparisonFootHeight(part.name,p,mapped.y,floor_,ankleY_,kneeY_,hipScale_,[&](double y) {return mapY(y);});
+            return mapped;
+        }
+        // Map the retained half through the original body field, then reflect
+        // it in the cached mapped 3D plane. This retains the field's actual
+        // nonlinear shape at knots without shearing the two sides differently.
+        const double side=dot(p-part.vertebraAnchor,part.vertebraNormal);
+        const Vec3 retained=side<0 ? p-part.vertebraNormal*(2*side) : p;
+        const Vec3 result=map(retained)+part.mappedClearance;
+        // Keep the mapped tangential position, and use the fitted normal scale
+        // for signed distance so no point crosses at a nonlinear field knot.
+        const double distance=dot(result-part.mappedAnchor,part.mappedNormal);
+        return result+part.mappedNormal*(side*part.mappedNormalScale-distance);
+    }
+    // The same vertices are used for rendering and for distal-toe collision.
+    std::vector<Vec3> toeIcosahedron(std::size_t i, Vec3 origin) const {
+        const Part& part=parts_[i];
+        if (part.name.rfind("FootDistP",0)!=0 || part.points.empty()) return {};
+        std::vector<Vec3> points; points.reserve(part.points.size());
+        for (Vec3 p:part.points) points.push_back(mapPart(p,part)+origin);
+        const std::string suffix=part.name.substr(9);
+        const std::string parentName=std::string(suffix[0]=='1' ? "FootProxP" : "FootMidP")+suffix;
+        const auto parent=std::find_if(parts_.begin(),parts_.end(),
+            [&](const Part& candidate) { return candidate.name==parentName; });
+        if (parent==parts_.end() || parent->points.empty()) return {};
+        Vec3 distalCenter{}, parentCenter{};
+        for (Vec3 p:points) distalCenter+=p;
+        distalCenter=distalCenter/static_cast<double>(points.size());
+        for (Vec3 p:parent->points) parentCenter+=mapPart(p,*parent)+origin;
+        parentCenter=parentCenter/static_cast<double>(parent->points.size());
+        const Vec3 forward=normalized(distalCenter-parentCenter);
+        const Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
+        const Vec3 up=normalized(cross(forward,lateral));
+        auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
+        Vec3 low=local(points.front()), high=low;
+        for (Vec3 p:points) {
+            p=local(p);
+            low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
+            high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
+        }
+        const Vec3 mid=(low+high)*0.5;
+        Vec3 center=lateral*mid.x+up*mid.y+forward*mid.z;
+        // Size the big-toe tip while retaining its forwardmost point. The
+        // prism follows the tip midpoint; its rear stays fixed.
+        constexpr double greatTipScale=0.95*0.90*1.05;
+        if (suffix[0]=='1') center+=forward*((high.z-low.z)*0.95*0.85065080835204*(1.0-greatTipScale));
+        const Vec3 size=(high-low)*(0.95*(suffix[0]=='1' ? greatTipScale : 1.0));
+        constexpr double phi=1.618033988749895;
+        const Vec3 corners[]={{-1,phi,0},{1,phi,0},{-1,-phi,0},{1,-phi,0},
+            {0,-1,phi},{0,1,phi},{0,-1,-phi},{0,1,-phi},
+            {phi,0,-1},{phi,0,1},{-phi,0,-1},{-phi,0,1}};
+        std::vector<Vec3> vertices; vertices.reserve(12);
+        for (Vec3 corner:corners) {
+            corner=normalized(corner);
+            vertices.push_back(center+lateral*(corner.x*size.x)+up*(corner.y*size.y)+forward*(corner.z*size.z));
+        }
+        return vertices;
+    }
+    // Rigid toe deltas from the source pose used to fit this comparison. The
+    // mapped centre anchors each rotation in the scaled blue figure. This is a
+    // geometric approximation, not a deformable tissue or clinical fit.
+    void setCorrectedToeReference(const std::vector<std::array<double,16>>& matrices) { correctedToeMatrices_=matrices; toeAttachmentRevision_=0; }
+    void setToeStandingReference(const std::vector<std::array<double,16>>& matrices) { standingToeMatrices_=matrices; toeAttachmentRevision_=0; }
+    const ToeSkinCalibration& toeSkinCalibration() const { return toeSkinCalibration_; } void setToeSkinCalibration(ToeSkinCalibration c) { if(c.before!=toeSkinCalibration_.before || c.after!=toeSkinCalibration_.after) { toeSkinCalibration_=std::move(c); ++revision_; } }
+    bool toeAttachmentsEnabled() const { return toeAttachmentsEnabled_; } void setToeAttachmentsEnabled(bool enabled) { if (toeAttachmentsEnabled_!=enabled) { toeAttachmentsEnabled_=enabled; ++revision_; toeAttachmentRevision_=0; } }
+    const auto& correctedToeReference() const { if(!toeAttachmentsEnabled_ && !male_ && originalSkinToeMatrices_.size()==parts_.size())return originalSkinToeMatrices_;
+        return standingToeMatrices_.size()==parts_.size()?standingToeMatrices_:correctedToeMatrices_; }
+    const auto& littleToeSkinReference() const { return referenceMatrices_; } std::vector<std::array<double,16>> toePose(const std::vector<std::array<double,16>>& current, Vec3 origin,
+                                               const std::vector<std::array<double,16>>* reference=nullptr) const {
+        const std::array<double,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        std::vector<std::array<double,16>> result(parts_.size(),identity);
+        if (current.size()!=parts_.size() || referenceMatrices_.size()!=parts_.size() || metatarsalFrames_.size()!=parts_.size()) return result;
+        for (std::size_t i=0;i<parts_.size();++i) {
+            const auto& p=parts_[i];
+            if (p.points.empty() || (p.name.rfind("FootProxP",0)!=0 && p.name.rfind("FootMidP",0)!=0 &&
+                                     p.name.rfind("FootDistP",0)!=0)) continue;
+            Vec3 center{}; for (Vec3 q:p.points) center+=q;
+            center=center/static_cast<double>(p.points.size());
+            result[i]=registeredToeDelta(current[i],referenceMatrices_[i],metatarsalFrames_[i],center,
+                                        [&](Vec3 q) {return mapPart(q,p)+origin;});
+        }
+        mirrorReferenceToePose(parts_,result,referenceMatrices_,reference?*reference:(!toeAttachmentsEnabled_ && !male_ && originalSkinToeMatrices_.size()==parts_.size()?originalSkinToeMatrices_:
+                                   !toeAttachmentsEnabled_ && standingToeMatrices_.size()==parts_.size()?standingToeMatrices_:correctedToeMatrices_),metatarsalFrames_,origin,
+                               [&](Vec3 q,const Part& p){return mapPart(q,p);});
+        if (reference && toeAttachmentsEnabled_ && standingToeMatrices_.size()==parts_.size() && *reference==standingToeMatrices_) fitComparisonToePlacement(parts_,result,[&](Vec3 q,const Part& p){return mapPart(q,p);},male_,origin);
+        // Explicit references are static snapshots used to retarget the skin.
+        // They must remain unchanged; only subsequent animation needs hinges.
+        if (!reference && toeAttachmentsEnabled_) {
+            const auto& rest=correctedToeMatrices_.size()==parts_.size() ? correctedToeMatrices_ : referenceMatrices_;
+            const auto map=[&](Vec3 q,const Part& p){return mapPart(q,p);};
+            auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,correctedToeMatrices_,metatarsalFrames_,origin,map);
+            if (standingToeMatrices_.size()==parts_.size()) {
+                auto standing=comparisonToeNeutral(parts_,referenceMatrices_,standingToeMatrices_,standingToeMatrices_,metatarsalFrames_,origin,map);
+                fitComparisonToePlacement(parts_,standing,map,male_,origin);
+                result=rebaseComparisonToePose(result,neutral,standing);neutral=standing;
+            }
+            if (toeAttachmentRevision_!=revision_) {
+                toeAttachments_=comparisonToeAttachments(parts_,localToeMatrices(neutral,origin),map);
+                toeAttachmentRevision_=revision_;
+            }
+            attachComparisonToes(toeAttachments_,neutral,result,origin);
+        }
+        return result;
+    }
+    std::vector<ComparisonToeAttachment> toePivots(const std::vector<std::array<double,16>>& posed,Vec3 origin) const {
+        if(!toeAttachmentsEnabled_ || posed.size()!=parts_.size() || toeAttachmentRevision_!=revision_)return {};
+        const auto& rest=standingToeMatrices_.size()==parts_.size()?standingToeMatrices_:
+                         correctedToeMatrices_.size()==parts_.size()?correctedToeMatrices_:referenceMatrices_;
+        auto neutral=comparisonToeNeutral(parts_,referenceMatrices_,rest,rest,metatarsalFrames_,origin,[&](Vec3 q,const Part& p){return mapPart(q,p);});
+        if (standingToeMatrices_.size()==parts_.size()) fitComparisonToePlacement(parts_,neutral,[&](Vec3 q,const Part& p){return mapPart(q,p);},male_,origin);
+        return posedToeAttachments(toeAttachments_,neutral,posed,origin);
+    }
+    const JointRigidTransform& metatarsalFrame(std::size_t i) const { return metatarsalFrames_[i]; }
+    // Toe prisms belong to their own phalanges, so the pieces articulate
+    // independently. The great toe has only two phalanges.
+    std::vector<Vec3> toePrism(std::size_t i, Vec3 origin) const {
+        const Part& part=parts_[i];
+        const bool middle=part.name.rfind("FootMidP",0)==0;
+        const bool great=part.name.rfind("FootProxP1_",0)==0;
+        const bool lesserProx=part.name.rfind("FootProxP",0)==0 && !great;
+        if (lesserProx) return proximalToePrism(i,origin);
+        if ((!middle && !great) || part.points.empty()) return {};
+        const std::string suffix=part.name.substr(middle ? 8 : 9);
+        const std::string distalName="FootDistP"+suffix;
+        const auto distal=std::find_if(parts_.begin(),parts_.end(),
+            [&](const Part& candidate) { return candidate.name==distalName; });
+        if (distal==parts_.end() || distal->points.empty()) return {};
+        Vec3 center{},tipCenter{};
+        for (Vec3 p:part.points) center+=mapPart(p,part)+origin;
+        for (Vec3 p:distal->points) tipCenter+=mapPart(p,*distal)+origin;
+        center=center/static_cast<double>(part.points.size());
+        tipCenter=tipCenter/static_cast<double>(distal->points.size());
+        Vec3 forward=normalized(tipCenter-center);
+        Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
+        Vec3 up=normalized(cross(forward,lateral));
+        if (length(forward)<1e-8 || length(lateral)<1e-8 || length(up)<1e-8) return {};
+        const auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
+        Vec3 low=local(mapPart(part.points.front(),part)+origin),high=low;
+        for (Vec3 p:part.points) {
+            p=local(mapPart(p,part)+origin);
+            low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
+            high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
+        }
+        const auto tip=toeIcosahedron(static_cast<std::size_t>(distal-parts_.begin()),origin);
+        if (tip.empty()) return {};
+        Vec3 tipLow=local(tip.front()),tipHigh=tipLow;
+        for (Vec3 p:tip) {
+            p=local(p);
+            tipLow.x=std::min(tipLow.x,p.x); tipLow.y=std::min(tipLow.y,p.y); tipLow.z=std::min(tipLow.z,p.z);
+            tipHigh.x=std::max(tipHigh.x,p.x); tipHigh.y=std::max(tipHigh.y,p.y); tipHigh.z=std::max(tipHigh.z,p.z);
+        }
+        // Reach the tip's midpoint at rest; both pieces remain independently
+        // attached to their own bones.
+        const double back=low.z-0.08*(high.z-low.z);
+        const double front=(tipLow.z+tipHigh.z)*0.5;
+        const double x=(low.x+high.x)*0.5, y=(low.y+high.y)*0.5;
+        // The octagon's extrema are cos(pi/8) times its radii. Fit the back
+        // to this bone with a 30% flesh allowance; keep the front at 80% of
+        // the tip's width and height.
+        constexpr double octagonExtent=0.9238795325112867;
+        constexpr double pi=3.14159265358979323846;
+        std::vector<Vec3> vertices; vertices.reserve(16);
+        for (int end=0;end<2;++end) for (int k=0;k<8;++k) {
+            const double z=end ? front : back;
+            const double rx=(end ? (tipHigh.x-tipLow.x)*0.40 : (high.x-low.x)*0.65)/octagonExtent;
+            const double ry=(end ? (tipHigh.y-tipLow.y)*0.40 : (high.y-low.y)*0.65)/octagonExtent;
+            const double angle=(double(k)+0.5)*pi/4.0;
+            vertices.push_back(lateral*(x+rx*std::cos(angle))+up*(y+ry*std::sin(angle))+forward*z);
+        }
+        return vertices;
+    }
+    // The four lesser toes have a third phalanx. Fit its prism to that
+    // proximal bone and overlap the next prism slightly at the joint.
+    std::vector<Vec3> proximalToePrism(std::size_t i, Vec3 origin) const {
+        const Part& part=parts_[i];
+        if (part.points.empty()) return {};
+        const std::string nextName="FootMidP"+part.name.substr(9);
+        const auto next=std::find_if(parts_.begin(),parts_.end(),
+            [&](const Part& candidate) { return candidate.name==nextName; });
+        if (next==parts_.end() || next->points.empty()) return {};
+        const auto nextPrism=toePrism(static_cast<std::size_t>(next-parts_.begin()),origin);
+        if (nextPrism.size()!=16) return {};
+        Vec3 center{}, nextCenter{};
+        for (Vec3 p:part.points) center+=mapPart(p,part)+origin;
+        for (Vec3 p:next->points) nextCenter+=mapPart(p,*next)+origin;
+        center=center/static_cast<double>(part.points.size());
+        nextCenter=nextCenter/static_cast<double>(next->points.size());
+        const Vec3 forward=normalized(nextCenter-center);
+        const Vec3 lateral=normalized(cross(Vec3{0,1,0},forward));
+        const Vec3 up=normalized(cross(forward,lateral));
+        if (length(forward)<1e-8 || length(lateral)<1e-8 || length(up)<1e-8) return {};
+        const auto local=[&](Vec3 p) { return Vec3{dot(p,lateral),dot(p,up),dot(p,forward)}; };
+        Vec3 low=local(mapPart(part.points.front(),part)+origin), high=low;
+        for (Vec3 p:part.points) {
+            p=local(mapPart(p,part)+origin);
+            low.x=std::min(low.x,p.x); low.y=std::min(low.y,p.y); low.z=std::min(low.z,p.z);
+            high.x=std::max(high.x,p.x); high.y=std::max(high.y,p.y); high.z=std::max(high.z,p.z);
+        }
+        Vec3 nextLow=local(nextPrism[0]), nextHigh=nextLow;
+        for (int k=1;k<8;++k) {
+            const Vec3 p=local(nextPrism[k]);
+            nextLow.x=std::min(nextLow.x,p.x); nextLow.y=std::min(nextLow.y,p.y); nextLow.z=std::min(nextLow.z,p.z);
+            nextHigh.x=std::max(nextHigh.x,p.x); nextHigh.y=std::max(nextHigh.y,p.y); nextHigh.z=std::max(nextHigh.z,p.z);
+        }
+        const double back=low.z-0.08*(high.z-low.z);
+        const double front=std::max(high.z,(nextLow.z+nextHigh.z)*0.5+0.12*(high.z-low.z));
+        constexpr double extent=0.9238795325112867, pi=3.14159265358979323846;
+        std::vector<Vec3> vertices; vertices.reserve(16);
+        for (int end=0;end<2;++end) for (int k=0;k<8;++k) {
+            const double x=end ? (nextLow.x+nextHigh.x)*0.5 : (low.x+high.x)*0.5;
+            const double y=end ? (nextLow.y+nextHigh.y)*0.5 : (low.y+high.y)*0.5;
+            const double rx=(end ? (nextHigh.x-nextLow.x)*0.5 : (high.x-low.x)*0.65)/extent;
+            const double ry=(end ? (nextHigh.y-nextLow.y)*0.5 : (high.y-low.y)*0.65)/extent;
+            const double angle=(double(k)+0.5)*pi/4.0;
+            vertices.push_back(lateral*(x+rx*std::cos(angle))+up*(y+ry*std::sin(angle))+forward*(end ? front : back));
+        }
+        return vertices;
+    }
+    // Two successive 5% reductions of the big-toe exterior. Bone geometry
+    // and bone transforms remain unchanged.
+    static constexpr double greatToeScale=0.95*0.95;
+    bool greatToeAnchor(std::size_t i, Vec3 origin, Vec3& anchor) const {
+        const auto& name=parts_[i].name;
+        const bool distal=name.rfind("FootDistP1_",0)==0;
+        const bool proximal=name.rfind("FootProxP1_",0)==0;
+        if (!distal && !proximal) return false;
+        const std::string proximalName=distal ? "FootProxP"+name.substr(9) : name;
+        const auto part=std::find_if(parts_.begin(),parts_.end(),
+            [&](const Part& p) { return p.name==proximalName; });
+        if (part==parts_.end()) return false;
+        const auto prism=toePrism(static_cast<std::size_t>(part-parts_.begin()),origin);
+        if (prism.size()!=16) return false;
+        anchor={}; for (int k=0;k<8;++k) anchor+=prism[k];
+        anchor=anchor/8.0;
+        // Anchor the reduction at the upper surface so it does not uncover
+        // the unchanged bone at the top of the toe joint.
+        for (int k=0;k<8;++k) anchor.y=std::max(anchor.y,prism[k].y);
+        return true;
+    }
+    void resizeGreatToe(std::size_t i, Vec3 origin, std::vector<Vec3>& points) const {
+        Vec3 anchor{};
+        if (!greatToeAnchor(i,origin,anchor)) return;
+        for (Vec3& p:points) p=anchor+(p-anchor)*greatToeScale;
+    }
+    ToeSkinMesh toeSurface(std::size_t i, Vec3 origin) const {
+        const auto& name=parts_[i].name;
+        if (name.rfind("FootDistP",0)!=0) return {};
+        const std::string suffix=name.substr(9);
+        const auto findPart=[&](const std::string& partName) {
+            return std::find_if(parts_.begin(),parts_.end(),[&](const Part& p) { return p.name==partName; });
+        };
+        const auto proximal=findPart("FootProxP"+suffix);
+        const auto middle=findPart("FootMidP"+suffix);
+        if (proximal==parts_.end() || (suffix[0]!='1' && middle==parts_.end())) return {};
+        std::vector<std::vector<Vec3>> prisms;
+        std::vector<int> owners;
+        const auto add=[&](const auto& part) {
+            const auto index=static_cast<std::size_t>(part-parts_.begin());
+            prisms.push_back(toePrism(index,origin)); owners.push_back(static_cast<int>(index));
+        };
+        add(proximal); if (suffix[0]!='1') add(middle);
+        std::vector<Vec3> tipBone; tipBone.reserve(parts_[i].points.size());
+        for (Vec3 p:parts_[i].points) tipBone.push_back(mapPart(p,parts_[i])+origin);
+        // Determine nail clearance against the unchanged bone in the
+        // pre-scaled frame, then scale the finished toe exterior.
+        Vec3 anchor{};
+        if (suffix[0]=='1' && greatToeAnchor(i,origin,anchor))
+            for (Vec3& p:tipBone) p=anchor+(p-anchor)/greatToeScale;
+        auto skin=makeToeSkin(prisms,owners,toeIcosahedron(i,origin),tipBone,static_cast<int>(i));
+        if (suffix[0]=='1') {
+            resizeGreatToe(i,origin,skin.points);
+            resizeGreatToe(i,origin,skin.nailPoints);
+        }
+        return skin;
+    }
+    void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
+              const std::vector<std::array<double,16>>* pose=nullptr, bool jointViewOwners=false) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
+        Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12; toe.opacity=0.5;
+        const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
-            for (Vec3 p:part.points) { p=map(p,part.armSide,part.cranial,part.girdle,part.humerus); p.x+=x; points.push_back(p); }
+            for (Vec3 p:part.points) points.push_back(mapPart(p,part)+origin);
+            if (!rasterizer.gpu() && pose && i<pose->size()) for (Vec3& p:points) p=transform((*pose)[i],p);
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);
             rasterizer.mesh(points,part.faces,blue);
+            if (pose && i<pose->size()) rasterizer.setBatchPose((*pose)[i]);
+            if (jointViewOwners || part.name.rfind("FootProxP",0)==0 || part.name.rfind("FootMidP",0)==0 || part.name.rfind("FootDistP",0)==0 ||
+                part.name.rfind("FootMeta",0)==0 || part.name.rfind("Cal_",0)==0 || part.name.rfind("Tal_",0)==0 ||
+                part.name.rfind("Nav_",0)==0 || part.name.rfind("Cub_",0)==0 || part.name.find("Cun_")!=std::string::npos ||
+                part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0) rasterizer.markSkinOwner();
         }
+        drawMakeHumanFeet(*this,male_,rasterizer,origin,idBase,pose,toe);
     }
-
 private:
     static Vec3 transform(const std::array<double,16>& m, Vec3 p) {
         return {m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
                 m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
     }
-    static double lerp(double a,double b,double t) { return a+(b-a)*t; }
-    double mapY(double y) const {
+    static double lerp(double a,double b,double t) { return a+(b-a)*t; } double mapY(double y) const {
         std::size_t i=0; while (i+2<sourceY_.size() && y>sourceY_[i+1]) ++i;
         return lerp(targetY_[i],targetY_[i+1],(y-sourceY_[i])/(sourceY_[i+1]-sourceY_[i]));
     }
@@ -462,7 +513,7 @@ private:
         shoulderYTarget_=mapY(shoulderY);
         shoulderVertical_=(mapY(shoulderY+epsilon)-mapY(shoulderY-epsilon))/(2*epsilon);
         // Solve the average of the two endpoint chords after the shared field.
-        const double desired=targets_[Arm]/100;
+        double desired=targets_[Arm]/100;
         auto armLength=[&](double value) {
             armScale_=value; double sum=0;
             for (int side=0;side<2;++side) sum+=length(map(armEnd_[side],side==0?1:-1)-map(armStart_[side],side==0?1:-1,false,false,true));
@@ -478,7 +529,14 @@ private:
             // before solving the distal scale; keep a continuous elbow frame.
             upperArmScale_=a;
             const double shortest=armLength(a);
-            if (shortest>=desired) { error="Arm target is incompatible with the pose"; feasible_=false; return false; }
+            // A positive requested length may still be shorter than the fixed
+            // vertical/depth offset between the endpoints. Keep the request and
+            // fit the closest possible chord instead of blocking the slider.
+            if (shortest>=desired) {
+                desired=shortest+1e-10;
+                targets_[Arm]=desired*100;
+                exact_=false;
+            }
             // The reserve tends to zero at the entry to this fallback, so
             // neither the upper arm nor the forearm jumps at the boundary.
             const double reserve=std::min(0.05*(fixedUpperMinimum-desired),0.5*(desired-shortest));
@@ -493,16 +551,58 @@ private:
         while (armLength(b)<desired && b<1e150) b*=2;
         if (armLength(a)>desired || armLength(b)<desired) { error="Arm target is incompatible with the pose"; feasible_=false; return false; }
         for (int n=0;n<50;++n) { double mid=(a+b)*0.5; if (armLength(mid)<desired) a=mid; else b=mid; }
-        armScale_=(a+b)*0.5; ++revision_; error.clear(); return true;
+        armScale_=(a+b)*0.5;
+        // Approximate the existing body field over each entire vertebra,
+        // including bones crossing a field knot, with a local least-squares
+        // affine map. Remove the component of its normal axis parallel to the
+        // mapped plane: this preserves reflection without forcing a uniform
+        // scale or slicing a vertebra at a field boundary.
+        for (auto& part:parts_) if (part.vertebra && !part.cranial) {
+            double qq[3][3]{}; Vec3 tq[3]{},qsum{},tsum{};
+            for (Vec3 p:part.points) {
+                const Vec3 d=p-part.vertebraAnchor;
+                const Vec3 q{dot(d,part.vertebraNormal),dot(d,part.vertebraUp),dot(d,part.vertebraForward)};
+                const Vec3 t=map(p); const double v[3]={q.x,q.y,q.z};
+                qsum+=q; tsum+=t;
+                for (int i=0;i<3;++i) { tq[i]+=t*v[i]; for (int j=0;j<3;++j) qq[i][j]+=v[i]*v[j]; }
+            }
+            const double count=static_cast<double>(part.points.size());
+            const Vec3 qm=qsum/count,tm=tsum/count; const double mv[3]={qm.x,qm.y,qm.z};
+            for (int i=0;i<3;++i) {
+                tq[i]=tq[i]/count-tm*mv[i];
+                for (int j=0;j<3;++j) qq[i][j]=qq[i][j]/count-mv[i]*mv[j];
+            }
+            const Vec3 c0{qq[0][0],qq[1][0],qq[2][0]},c1{qq[0][1],qq[1][1],qq[2][1]},c2{qq[0][2],qq[1][2],qq[2][2]};
+            const double det=dot(c0,cross(c1,c2));
+            if (std::abs(det)<1e-30) { error="Invalid vertebra scaling frame"; return false; }
+            const Vec3 rows[3]={cross(c1,c2)/det,cross(c2,c0)/det,cross(c0,c1)/det};
+            const auto column=[&](int j) {
+                const double v[3]={j==0?rows[0].x:j==1?rows[0].y:rows[0].z,
+                                   j==0?rows[1].x:j==1?rows[1].y:rows[1].z,
+                                   j==0?rows[2].x:j==1?rows[2].y:rows[2].z};
+                return tq[0]*v[0]+tq[1]*v[1]+tq[2]*v[2];
+            };
+            const Vec3 jn=column(0),ju=column(1),jv=column(2),crossPlane=cross(ju,jv);
+            if (length(crossPlane)<1e-15) { error="Invalid vertebra scaling frame"; return false; }
+            const Vec3 normal=normalized(crossPlane); const double normalScale=dot(jn,normal);
+            if (!(normalScale>0)) { error="Invalid vertebra normal scale"; return false; }
+            part.mappedNormal=normal; part.mappedNormalScale=normalScale;
+            part.mappedUp=ju; part.mappedForward=jv;
+            part.mappedClearance=part.jointClearance*(profile_.height/defaultHeight());
+            part.mappedAnchor=tm-normal*(normalScale*qm.x)-ju*qm.y-jv*qm.z+part.mappedClearance;
+        }
+        ++revision_; error.clear(); return true;
     }
-    bool male_=false, feasible_=false, exact_=false;
+    bool male_=false, feasible_=false, exact_=false, toeAttachmentsEnabled_=true; ToeSkinCalibration toeSkinCalibration_;
     BodyProportionCurves curves_;
     Profile profile_;
-    std::vector<Part> parts_;
+    std::vector<Part> parts_; std::vector<JointRigidTransform> metatarsalFrames_;
+    std::vector<std::array<double,16>> referenceMatrices_, correctedToeMatrices_, standingToeMatrices_, originalSkinToeMatrices_;
+    mutable std::vector<ComparisonToeAttachment> toeAttachments_; mutable std::uint64_t toeAttachmentRevision_=0;
     std::array<double,Count> targets_{}, requestedTargets_{};
     double floor_=0,top_=0,jaw_=0,cranialJoin_=0,pelvis_=0,pelvisTop_=0,hip_=0,c7_=0,neck_=0,neckZ_=0;
     double scapBottom_=0,scapTop_=0,hipWidth_=0,shoulderWidth_=0,centerX_=0;
-    double initialHeight_=0,shoulderYTarget_=0,shoulderVertical_=1;
+    double initialHeight_=0,shoulderYTarget_=0,shoulderVertical_=1,ankleY_=0,kneeY_=1;
     double heightScale_=1,hipScale_=1,shoulderScale_=1,headScale_=1,armScale_=1,upperArmScale_=1;
     std::array<double,7> sourceY_{}, targetY_{};
     std::array<double,2> hipY_{};

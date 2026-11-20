@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include "native.h"
 
 #include <array>
@@ -23,6 +25,21 @@ struct Color {
 Color operator+(Color a, Color b);
 Color operator*(Color a, double b);
 Color colorHex(const char* value);
+Color colorHex(std::uint32_t rgb);
+// Parse fixed #RRGGBB colours during compilation. Dynamic strings still use
+// colorHex(const char*); both paths share the same linear-colour conversion.
+consteval std::uint32_t hexRgb(const char (&text)[8]) {
+    const auto digit=[](char c) consteval -> std::uint32_t {
+        if (c >= '0' && c <= '9') return static_cast<std::uint32_t>(c-'0');
+        if (c >= 'a' && c <= 'f') return static_cast<std::uint32_t>(c-'a'+10);
+        if (c >= 'A' && c <= 'F') return static_cast<std::uint32_t>(c-'A'+10);
+        throw "Invalid hexadecimal colour";
+    };
+    if (text[0]!='#' || text[7]!='\0') throw "Expected #RRGGBB";
+    std::uint32_t rgb=0;
+    for (int i=1;i<7;++i) rgb=(rgb<<4)|digit(text[i]);
+    return rgb;
+}
 Color mix(Color a, Color b, double amount);
 
 struct Texture {
@@ -188,11 +205,23 @@ struct GpuBatch {
     // its colour arrives already prepared for the display. Drawn last, so what it
     // covers it covers.
     bool isUi = false;
+    // World-space inspection geometry drawn without depth after the scene.
+    bool isOverlay = false;
+    // V-view indexed vertices carry source-structure indices in nx for GPU skinning.
+    bool vertexSkinned = false;
+    // Toe skin vertices name their owner's object ID rather than a V-view slot.
+    bool skinObjectIds = false;
+    bool blendedSkin = false;
+    bool smoothSkin = false;
+    // Standalone translucent geometry, independent of skinning.
+    bool translucent = false;
+    bool skinOwner = false;
     float pivotX = 0, pivotZ = 0, yaw = 0;
     std::array<double, 16> modelMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
 
 struct GpuScene {
+    std::uint32_t maleSkinCount = 0, femaleSkinCount = 0;
     int width = kDefaultWindowWidth;
     int height = kDefaultWindowHeight;
     double focal = 640;
@@ -254,6 +283,64 @@ public:
     // for a vertex cache.
     void mesh(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
               const Material& material);
+    void meshSkinned(const std::vector<Vec3>& points, const std::vector<std::array<int, 3>>& faces,
+                     const std::vector<int>& owners, const Material& material) {
+        if (!gpu_ || owners.size()!=points.size()) { mesh(points,faces,material); return; }
+        const auto index=prepareBatch(material);
+        const std::size_t start=scene_.batches[index].vertices.size();
+        mesh(points,faces,material);
+        GpuBatch& batch=scene_.batches[index];
+        if (batch.vertices.size()!=start+points.size()) return;
+        batch.vertexSkinned=true;
+        for (std::size_t i=0;i<owners.size();++i) batch.vertices[start+i].nx=float(owners[i]<0 ? 0 : owners[i]);
+    }
+    void setBatchPose(const std::array<double,16>& pose) {
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].modelMatrix=pose;
+    }
+    void markSkinOwner() {
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].skinOwner=true;
+    }
+    void markOverlay() {
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].isOverlay=true;
+    }
+    void meshObjectSkinned(const std::vector<Vec3>& points, const std::vector<std::array<int,3>>& faces,
+                           const std::vector<int>& owners, const Material& material) {
+        meshSkinned(points,faces,owners,material);
+        if (gpu_ && activeBatch_<scene_.batches.size()) scene_.batches[activeBatch_].skinObjectIds=true;
+    }
+    // Two bone slots and a blend weight occupy the otherwise unused normal
+    // fields of an indexed skin mesh. Vertices remain on the GPU during motion.
+    void meshObjectBlended(const std::vector<Vec3>& points, const std::vector<std::array<int,3>>& faces,
+                           const std::vector<int>& first, const std::vector<int>& second,
+                           const std::vector<double>& weights, const Material& material) {
+        if (!gpu_ || first.size()!=points.size() || second.size()!=points.size() || weights.size()!=points.size()) {
+            mesh(points,faces,material); return;
+        }
+        const auto index=prepareBatch(material);
+        const auto start=scene_.batches[index].vertices.size();
+        meshSkinned(points,faces,first,material);
+        auto& batch=scene_.batches[index];
+        if (batch.vertices.size()!=start+points.size()) return;
+        batch.skinObjectIds=true; batch.blendedSkin=true; batch.smoothSkin=true;
+        // Area-weighted vertex normals, octahedrally packed into the otherwise
+        // unused UV stream. This changes shading only, not the source mesh.
+        std::vector<Vec3> normals(points.size());
+        for (const auto& f:faces) {
+            if (f[0]<0 || f[1]<0 || f[2]<0 || std::size_t(f[0])>=points.size() ||
+                std::size_t(f[1])>=points.size() || std::size_t(f[2])>=points.size()) continue;
+            const Vec3 n=cross(points[f[1]]-points[f[0]],points[f[2]]-points[f[0]]);
+            for(int v:f)normals[std::size_t(v)]+=n;
+        }
+        for (std::size_t i=0;i<points.size();++i) {
+            batch.vertices[start+i].ny=float(second[i]);
+            batch.vertices[start+i].nz=float(std::clamp(weights[i],0.0,1.0));
+            Vec3 n=normals[i];const double sum=std::abs(n.x)+std::abs(n.y)+std::abs(n.z);
+            if(sum>1e-20)n=n/sum;else n={0,1,0};
+            double x=n.x,y=n.y;
+            if(n.z<0){x=(1-std::abs(n.y))*(n.x<0?-1:1);y=(1-std::abs(n.x))*(n.y<0?-1:1);}
+            batch.vertices[start+i].u=float(x);batch.vertices[start+i].v=float(y);
+        }
+    }
     bool gpu() const { return gpu_; }
     void setCamera(const Camera& camera);
     void setObject(std::uint32_t id, Vec2 pivot, float yaw);

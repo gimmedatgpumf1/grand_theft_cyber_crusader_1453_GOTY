@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <unordered_map>
 
 namespace gtc::native::detail {
 
@@ -73,7 +74,7 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
     std::uint32_t running = 0, start = 0;
     for (std::size_t i = 0; i < scene.batches.size(); ++i) {
         if (i == first) start = running;
-        if (uvs && !texturedMaterial(scene.batches[i].material)) continue;
+        if (uvs && !hasVertexUv(scene.batches[i])) continue;
         offsets[i] = running;
         running += static_cast<std::uint32_t>(scene.batches[i].vertices.size());
     }
@@ -81,10 +82,23 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
     const VkDeviceSize stride = uvs ? sizeof(UvVertex) : sizeof(PackedVertex);
     const VkDeviceSize offset = static_cast<VkDeviceSize>(start) * stride;
     if (offset == bytes) return true;
+    std::unordered_map<std::uint32_t,float> skinSlots;
+    if (!uvs) {
+        for (std::size_t i=0;i<scene.batches.size();++i)
+            if (scene.batches[i].skinOwner && slots_[i]>=0) skinSlots.emplace(scene.batches[i].objectId,slots_[i]);
+        for (std::size_t i=first;i<scene.batches.size();++i) if (scene.batches[i].skinObjectIds)
+            for (const auto& vertex:scene.batches[i].vertices) {
+                if (!skinSlots.count(static_cast<std::uint32_t>(vertex.nx)) ||
+                    (scene.batches[i].blendedSkin && !skinSlots.count(static_cast<std::uint32_t>(vertex.ny)))) {
+                    std::fprintf(stderr,"[vk] missing skin bone slot\n");
+                    return false;
+                }
+            }
+    }
     const auto write = [&](char* cursor) {
         for (std::size_t i = first; i < scene.batches.size(); ++i) {
             const GpuBatch& batch = scene.batches[i];
-            if (uvs && !texturedMaterial(batch.material)) continue;
+            if (uvs && !hasVertexUv(batch)) continue;
             for (std::size_t j = 0; j < batch.vertices.size(); ++j) {
                 const GpuVertex& vertex = batch.vertices[j];
                 const VkDeviceSize dest = static_cast<VkDeviceSize>(offsets[i] - start + j) * stride;
@@ -92,8 +106,11 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
                     UvVertex coordinate{vertex.u, vertex.v};
                     std::memcpy(cursor + dest, &coordinate, sizeof(coordinate));
                 } else {
-                    PackedVertex packed{vertex.x, vertex.y, vertex.z,
-                        slots_[i] >= 0.0F ? slots_[i] : vertex.nx, vertex.ny, vertex.nz};
+                    const float boneSlot=batch.skinObjectIds ? skinSlots.at(static_cast<std::uint32_t>(vertex.nx)) :
+                        batch.vertexSkinned ? vertex.nx + (batch.objectId==8001 ? float(scene.maleSkinCount) : 0.0f)
+                        : (slots_[i] >= 0.0F ? slots_[i] : vertex.nx);
+                    const float secondSlot=batch.blendedSkin ? skinSlots.at(static_cast<std::uint32_t>(vertex.ny)) : vertex.ny;
+                    PackedVertex packed{vertex.x, vertex.y, vertex.z, boneSlot, secondSlot, vertex.nz};
                     std::memcpy(cursor + dest, &packed, sizeof(packed));
                 }
             }
@@ -172,12 +189,14 @@ bool Renderer::uploadArray(DeviceArray& array, VkDeviceSize bytes, const std::fu
 
 bool Renderer::updateGeometry(const GpuScene& scene) {
     findRuns(scene);
-    std::vector<GeometryStamp> next;
+    // Retain this scratch allocation across unchanged and changing frames.
+    auto& next = nextGeometryStamps_;
+    next.clear();
     next.reserve(scene.batches.size());
     for (std::size_t i = 0; i < scene.batches.size(); ++i) {
         const auto& batch = scene.batches[i];
         next.push_back({batch.revision, scene.revision,
-                        batch.vertices.size(), batch.indices.size(), slots_[i], texturedMaterial(batch.material)});
+                        batch.vertices.size(), batch.indices.size(), slots_[i], hasVertexUv(batch)});
     }
     dirtyBatch_ = 0;
     while (geometryScene_ == &scene && dirtyBatch_ < next.size() && dirtyBatch_ < geometryStamps_.size() &&
@@ -194,7 +213,7 @@ bool Renderer::updateGeometry(const GpuScene& scene) {
         return false;
     if (!uploadedValid_) dirtyBatch_ = 0;
     if (!uploadVertices(scene)) return false;
-    geometryStamps_ = std::move(next);
+    geometryStamps_.swap(next);
     geometryScene_ = &scene;
     uploadedValid_ = true;
     return true;
@@ -204,7 +223,7 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
     std::size_t total = 0, coordinates = 0;
     for (const GpuBatch& batch : scene.batches) {
         total += batch.vertices.size();
-        if (texturedMaterial(batch.material)) coordinates += batch.vertices.size();
+        if (hasVertexUv(batch)) coordinates += batch.vertices.size();
     }
     if (total == 0) {
         firstVertex_.assign(scene.batches.size(), 0);
@@ -234,7 +253,7 @@ bool Renderer::uploadVertices(const GpuScene& scene) {
             return false;
         }
         positions += batch.vertices.size();
-        if (!texturedMaterial(batch.material)) continue;
+        if (!hasVertexUv(batch)) continue;
         if (firstUv_[index] != coordinatesUsed) {
             std::fprintf(stderr, "[vk] texture coordinate offset %u is not where batch %zu starts\n",
                          firstUv_[index], index);

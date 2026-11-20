@@ -1,0 +1,805 @@
+// The answer to a configuration of contacts, in one place.
+//
+// This is the half of a tick that decides what everything in the room is standing on
+// and how hard: the patches, the load each of their ends carries, and the grip that
+// holds a face along the surface it is on. It is here rather than beside the rest of
+// the tick because it is long, and because it can be read on its own -- nothing below
+// moves anything. An impulse is given, the body's speed and spin change by it, and the
+// walk does the moving afterwards.
+//
+// The one thing that is not a velocity here is the gap. What an end is *allowed* to do
+// about the distance it has left to the surface is a decision about how a rigid face
+// meets a flat one, and it is where a resting pair is either left still or made to
+// walk; every word of it is written where it is used.
+
+#include "client/playground_ball_shape.h"
+#include "client/playground_pair.h"
+#include "client/playground_room.h"
+#include "client/playground_room_tick.h"
+#include "client/playground_shapes.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+
+namespace gtc::native {
+using namespace playground_detail;
+using namespace playground_tick;
+
+namespace {
+// How many sweeps of the patches one tick is solved in. Sequential impulses
+// converge quickly for a handful of contacts; this is the point at which a solve
+// that is still moving is taken to be a corner case, not a solve.
+constexpr int kSolvePasses = 32;
+// A sweep of the patches is over when nothing it can still see is closing faster
+// than this. A millionth of a metre per second is a thousandth of a millimetre in
+// a whole tick: slower than the arithmetic of the positions can even show, and
+// small enough that what is left over cannot pump a stacked pair.
+constexpr double kSolveTolerance = 1e-12;// A sweep of the patches is over when it has stopped changing the answer. Every
+// impulse it applies is a change, so this is measured in newton seconds: a thousandth
+// of a micronewton second is nothing next to a corner's weight over a tick (half a
+// newton second), and it is far smaller than anything the eye or the integrator can
+// see. It is a separate number from the one above because it answers a separate
+// question: the sweep now stops when the *answer* has stopped moving rather than when
+// the surfaces have stopped closing.
+constexpr double kImpulseTolerance = 1e-12;  // N s
+// The most times a patch is asked for its load, then its grip, then its load again
+// before the room is taken as answered. Grip lands a moment on a body that changes
+// where it presses, so the two answers change each other, and a round that changes
+// nothing is what says they agree. The count is a ceiling and not a cost: a resting
+// room agrees in two or three rounds, and stops there.
+constexpr int kGripRoundsMax = 48;
+// What the two answers are asked to agree to, in newton seconds. A thousandth of a
+// micronewton second over a tick is a force of twenty nanonewtons: far below the
+// weight of a speck, and far below anything the eye can find in a shape's travel over
+// an hour. Asking for more than this buys nothing but arithmetic.
+constexpr double kAgree = 1e-10;  // N s; resting contacts must converge below geometric contact error
+}  // namespace
+
+// The answer to a whole configuration of patches at once.
+//
+// One patch is solved as one load with a pressure that runs from one end to the
+// other: two ends, two unknown impulses, and the requirement that the body is not
+// driven into the surface at either of them. That is a two by two system, and it is
+// solved as one -- which is the whole point. Two ends answered separately can each
+// stop their own end and leave the body turning; two ends answered together stop
+// the body where it stands, and a face that has landed flat stays flat instead of
+// rocking from corner to corner. When the answer at an end would be a pull, the
+// floor lets go there and the patch is carried by the other end alone: that is a
+// body lifting off, decided by the load and not by a rule about corners.
+//
+// The load and the grip are swept in that order, and the normal is what the sweep
+// ends on. They are not independent: grip is what the normal pressure can carry, and
+// grip at the sole of a shape lands a moment on it that changes where the shape
+// presses. Sweeping one and then the other converges on a state where the two agree,
+// and ending on the normal means a tick can never finish with a corner still being
+// driven into the floor -- hold and slip may be a hair from where they settle, but
+// nothing goes into anything.
+bool PlaygroundRoom::solveContacts(ManifoldSet& patches) {
+    const char* traceContext = std::getenv("GTC_TRACE_CONTEXT");
+    static std::uint64_t solveTraceId = 0;
+    const std::uint64_t thisSolveTraceId = solveTraceId++;
+    const auto traceKinetic = [&]() {
+        double value=0.0;
+        for (const Body& b:bodies_) if (b.count)
+            value += 0.5*b.mass*dot(b.velocity,b.velocity)+0.5*b.moment*b.spin*b.spin;
+        for (const Ball& b:balls_) {
+            const double inertia=0.4*b.mass*b.radius*b.radius;
+            value += 0.5*b.mass*dot(b.velocity,b.velocity)+0.5*inertia*b.spin*b.spin;
+        }
+        return value;
+    };
+    const double solveKineticBefore = traceContext ? traceKinetic() : 0.0;
+    if (traceContext)
+        std::printf("CONTACT_SOLVE_BEGIN context=%s id=%llu patches=%zu K=%.12g\n",traceContext,
+                    static_cast<unsigned long long>(thisSolveTraceId),patches.count,solveKineticBefore);
+    bool closingAtAll = false;
+    // The largest change the last sweep made, in newton seconds. A sweep is over when
+    // it has nothing left to say -- see kImpulseTolerance for why the question is
+    // asked about the answer and not about how fast the surfaces are closing.
+    double worst = 0.0;
+
+    // A patch is one face meeting one surface, and it is answered as a whole.
+    //
+    // A face lying on the floor presses over both of its ends, and what it carries
+    // is a pressure that runs from one end to the other. So its ends are solved
+    // together, as one system, and the answer taken is the one that leaves neither
+    // end with a way into the surface -- both of them at rest against it. That is
+    // what a pressure between two ends can do and a single point cannot: an impulse
+    // at one corner of a face is an impulse off the line the weight runs along, so
+    // it turns the body; two of them, at the two corners, can carry the weight where
+    // it runs and turn the body not at all. Answered one end at a time the end
+    // solved last is the only one carrying anything, which is a shape standing on
+    // one corner of its face -- it turns, it rocks, and it never lies down.
+    //
+    // The pressure can only push. When the answer at one end would be a pull, the
+    // face is lifting there: that end carries nothing, gives back what it took, and
+    // the load is answered again over the ends that are left. That is a body tipping
+    // because its weight no longer runs between its supports, decided by the load
+    // and not by a rule about corners. A patch whose ends both lift carries nothing.
+    //
+    // The grip comes after the load, against the load it has under it: a surface
+    // holds a face along itself only as hard as it is pressing it, end by end. Load
+    // and grip are swept in that order -- grip lands a moment on the body that
+    // changes where it presses -- and the sweep ends on the load, so no tick
+    // finishes with a corner being driven into the floor.
+    const auto patchPass = [&](Manifold& patch, bool withGrip) {
+        // A quiet patch is a pair that was already resting when the tick opened, and
+        // resting is not the same thing as needing no answer.
+        //
+        // It used to be skipped outright: "the tick opened with them not closing, so
+        // there is no blow to strike." That is true of an arrival and it is false of a
+        // resting contact, because the tick has already put a whole weight into both
+        // of them before this solve runs -- half a metre a second of it, twenty times a
+        // second. Skipped, that weight was answered by nothing: the shape walked a whole
+        // tick of it, the ball it leans on walked the part along the floor the floor
+        // could not refuse, and the two of them traded that walk back and forth for
+        // ever. Measured in the King's corner: the ball 8.9 um and the triangle 1.4 um
+        // every tick, 2.9 mm of scene after three seconds, with nothing on screen
+        // moving to explain a millimetre of it.
+        //
+        // The contact is real and the load is real, and the solver is where a load is
+        // answered. What tells an arrival from a resting contact is not whether this
+        // pass runs; it is what the two of them are closing at, which is what the
+        // patches' own bias and compliance are made of.
+        const std::size_t count = patch.ends;
+        Body* body = &bodies_[patch.body];
+        const bool onABall = patch.ball < kBallCount;
+        Ball* ballSide = onABall ? &balls_[patch.ball] : nullptr;
+        Body* other = (!onABall && patch.other < kBodyCount) ? &bodies_[patch.other] : nullptr;
+        // A body asleep is a surface, for the same reason the ball is: it has no speed
+        // for a contact to change and nothing in the room can move it, so it may not
+        // take a share of anything. Treated as movable it would be pushed by every
+        // contact made against it, woken by the push, and then start the next tick on
+        // a speed no force gave it -- which is a shape that buzzes itself awake once a
+        // second for ever.
+        const bool otherFixed = other != nullptr && (bodyHeld(patch.other) || other->frozen);
+        // A ball that is asleep is a surface, in the same way a body that is asleep
+        // is: it has no speed to speak of and nothing a contact can move. Its own
+        // speed has to be left out of the answer, or a shape pressed onto a sleeping
+        // ball is answered against motion that is not happening -- and its share of
+        // what an impulse gives has to be left out too, because the impulse is not
+        // going to move it anywhere.
+        // A real blow wakes it. The rule for a shape asleep is the same one, and it
+        // is the same reason: what a sleeping thing may not do is be *treated as a
+        // wall* when something arrives at speed. A cube dropped onto a sleeping ball
+        // had its whole arrival cancelled by a surface that never moved -- the ball
+        // was given as a fixed wall and the cube stopped on it, and the ball took
+        // nothing, which is a ball that is not there. A contact that is merely
+        // resting closes at nothing and does not wake it, so a shape sitting on a
+        // sleeping ball still cannot buzz it awake.
+        if (onABall && ballSide->frozen) {
+            for (std::size_t k = 0; k < count; ++k) {
+                const double closing =
+                    dot(pointSpeed(*body, patch.point[k]) - ballPointSpeed(*ballSide, patch.point[k]), patch.normal);
+                if (closing < -kRestSpeed) {
+                    ballSide->frozen = false;
+                    break;
+                }
+            }
+        }
+        // A ball is not made a wall by being held up.
+        //
+        // It is tempting to say "the floor is under it, so it cannot move that way"
+        // and answer the blow as though the ball were stone. That is wrong, and it is
+        // wrong in the direction that conjures: the shape keeps a bounce off a
+        // surface that took nothing, and the floor -- which is what really answered --
+        // is given no part in it. A ball on the floor is a ball the floor holds, and
+        // both of them take their share: the blow arrives, the ball is moved by it,
+        // the floor answers, and every one of those steps is in the ledger. Between
+        // them they add up to the ball's speed not changing, which is what a ball
+        // pressed into the ground does -- and not one newton of it came from nowhere.
+        const bool ballFixed = onABall && ballSide->frozen;
+        // A body against a body has no ball on the other side of it, and its share of the
+        // solve is a body with an outline: the ball's moment is what a *ball* adds, and
+        // there is none here -- so it is nought rather than an object that is not there.
+        const double ballMoment =
+            onABall ? 0.4 * ballSide->mass * ballSide->radius * ballSide->radius : 0.0;
+        const Vec3 tangent{patch.normal.y, -patch.normal.x, 0.0};
+        const auto lever = [](Vec3 arm, Vec3 axis) { return arm.x * axis.y - arm.y * axis.x; };
+        // How fast a place on the body is going away from the other side of the
+        // patch along a direction.
+        const auto away = [&](Vec3 at, Vec3 direction) {
+            Vec3 otherSpeed{};
+            if (other != nullptr) {
+                if (!otherFixed) otherSpeed = pointSpeed(*other, at);
+            } else if (onABall) {
+                if (!ballFixed) {
+                    // What the ball is doing, as this patch is entitled to see it. A ball on
+                    // a taut rope cannot be pushed away from its anchor, so that part of its
+                    // speed is the rope's and the patch is not asked to answer it. Read whole,
+                    // the ball's own weight -- half a metre a second of fall, twenty times a
+                    // second -- was a closing speed at every face it was merely lying against,
+                    // and the shape on the other side was handed the impulse for it while the
+                    // rope took the speed back off the ball: the ball pushing the triangle
+                    // with a force that came out of nothing but its own weight. See
+                    // ballOffTheRope().
+                    const Vec3 turning = ballPointSpeed(*ballSide, at) - ballSide->velocity;
+                    otherSpeed = ballOffTheRope(*ballSide, ballSide->velocity) + turning;
+                }
+            }
+            return dot(pointSpeed(*body, at) - otherSpeed, direction);
+        };
+        // What of a push the ball can actually take: all of it along the surface
+        // under it, none of it into that surface. A ball resting on the floor is held
+        // up by the floor, so a push straight down on it is answered by the floor and
+        // not by the ball -- but a push *along* the floor moves it, whole. The two are
+        // not one number.
+        //
+        // It used to be one number, and it was the wrong one: the whole push was
+        // scaled by how much of it was not straight down, so a load leaning into the
+        // ball at forty degrees gave the ball a fifth of the sideways kick it was
+        // owed and threw the rest away. The shape kept the other four fifths -- a
+        // momentum out of nothing that grew every tick the load leaned, which is
+        // exactly a shape squeezed off a ball at a metre a second with the meter
+        // reading more than the drop. What the floor blocks is one component: take
+        // that out and give the ball the rest of the push, all of it.
+        const auto free = [&](Vec3 impulse) {
+            if (!onABall || ballFixed || !ballSide->touching || !ballSide->standing) return impulse;
+            return impulse - ballSide->supportNormal * dot(impulse, ballSide->supportNormal);
+        };
+        const auto give = [&](Vec3 at, Vec3 toward, Vec3 pushAt, Vec3 direction) {
+            // The share this body gives is the share it actually gives, read from the
+            // one place the room keeps it: a pinned body's centre cannot be moved, so
+            // the part of a push that would carry it is not a response at all. Solving
+            // it as 1/m made the solver believe the plank gave way where pushBody
+            // knows it does not, so the contact never closed as the solver expected,
+            // and every pass laid on another impulse to close it -- a ball pinched
+            // between a plank's end and a shape on the floor was pumped out at sixty
+            // metres a second. The lever term is the same either way: a pinned body
+            // still turns.
+            // Measured from what each body actually takes, which is what pushBody()
+            // will give it and not the whole of the push. A shape standing on the
+            // floor does not take the part of a push that runs down into it -- the
+            // floor answers that -- so it gives way by the rest, and the compliance
+            // has to be the rest. Solved as 1/m the solver believed a supported shape
+            // yielded where it does not, laid on another impulse to close a gap that
+            // had not moved, and handed the shape on the other side the momentum it
+            // had invented: a cube standing beside a triangle went from a nudge of a
+            // tenth of a metre a second to a thousand metres a second in one tick.
+            const Vec3 takes = toward;
+            double value = dot(takes, direction) * inverseMass(*body) +
+                           lever(at - body->centre, takes) * lever(pushAt - body->centre, direction) /
+                               body->moment;
+            if (other != nullptr) {
+                if (!otherFixed) {
+                    // The partner takes the push the other way round, so it is the
+                    // other way round that its own floor reads it.
+                    const Vec3 partner = toward;
+                    value += dot(partner, direction) * inverseMass(*other) +
+                             lever(at - other->centre, partner) *
+                                 lever(pushAt - other->centre, direction) / other->moment;
+                }
+            } else if (onABall) {
+                if (!ballFixed) {
+                    // The compliance has to be the compliance of the impulse that is
+                    // going to be applied, at the place it is going to be applied.
+                    //
+                    // A ball is touched where it is touched: on its own surface, on the
+                    // radius that faces the face -- which is what pushBallSupported
+                    // does. The levers are read from there and not from the shape's
+                    // corner. Read from the corner they were watched from the wrong
+                    // place, and for a normal push they were not nought: the solver
+                    // believed the ball answered a normal blow by *spinning*, and it
+                    // does not, because the line of a normal on a sphere runs through
+                    // the middle of it. So the ball appeared to move, the closing it
+                    // was supposed to have answered never went away, and the sweep laid
+                    // on another impulse, and another: the sum ran to three times the
+                    // momentum the ball was carrying, and the shape on the other side
+                    // was handed all of it. Read at the place the push really lands,
+                    // the normal lever is exactly nought and the tangential one is
+                    // exactly the radius, and the answer is the sphere's own.
+                    const Vec3 onBall = ballSide->position + patch.normal * ballSide->radius;
+                    value += dot(direction, ballFree(*ballSide, toward, patch.body)) / ballSide->mass +
+                             lever(onBall - ballSide->position, direction) *
+                                 lever(onBall - ballSide->position, ballFree(*ballSide, toward, patch.body)) /
+                                 ballMoment;
+                }
+            }
+            return value;
+        };
+        const auto pushOther = [&](Vec3 at, Vec3 impulse, ForceKind kind) {
+            if (other != nullptr) {
+                if (!otherFixed) pushBody(*other, at, impulse, kind);
+            } else if (onABall) {
+                // Where the ball is touched is on the ball, and it is on the radius
+                // that points at the face -- not at the face's own corner. A round ball
+                // pressed by a flat face meets it at one point, and that point lies on
+                // the line of the face's normal through the ball's centre. Pushed at
+                // the face's corner instead, the impulse was applied off that line, so
+                // a normal force -- which for a sphere runs through the centre and
+                // turns it by nothing -- arrived with a lever and spun the ball: two
+                // hundred radians a second, from a ball that had not moved, and every
+                // one of those radians is a surface speed the next contact answers.
+                // The lever is the radius along the normal, and the door is shut.
+                if (!ballFixed)
+                    pushBallSupported(*ballSide, ballSide->position + patch.normal * ballSide->radius, impulse, kind,
+                                      patch.body);
+            }
+        };
+        const auto pushEnd = [&](std::size_t k, Vec3 impulse, ForceKind kind) {
+            if (impulse.x == 0.0 && impulse.y == 0.0 && impulse.z == 0.0) return;
+            pushBody(*body, patch.point[k], impulse, kind);
+            pushOther(patch.point[k], impulse * -1.0, kind);
+        };
+        // Retain the time of a positive-clearance arrival for the rope's partial
+        // tick solve. Keep this separate from hitAt: the room has already advanced
+        // its body trajectory, while the rope walk needs to avoid applying this
+        // future impulse before the surfaces meet.
+        for (std::size_t k = 0; k < count; ++k) {
+            const double closing = away(patch.point[k], patch.normal);
+            if (!(patch.gap[k] > kQuantum) || !(closing < -kRestSpeed)) continue;
+            const double fraction = std::clamp(patch.gap[k] / (-closing * kTick), 0.0, 1.0);
+            if (fraction < body->ropeEventAt) {
+                body->ropeEventAt = fraction;
+                body->ropeEventVelocity = body->velocity;
+                body->ropeEventSpin = body->spin;
+            }
+            if (other != nullptr && !otherFixed && fraction < other->ropeEventAt) {
+                other->ropeEventAt = fraction;
+                other->ropeEventVelocity = other->velocity;
+                other->ropeEventSpin = other->spin;
+            }
+        }
+        // This body and its partner have now been answered at a patch: whatever
+        // the patch's ends go on to do, the body has met something this tick, and
+        // its travel is the solver's answer rather than a free fall.
+        if (count > 0) {
+            ++body->met;
+            if (other != nullptr) ++other->met;
+        }
+        // What the ends were closing at before this answer, for the walk.
+        for (std::size_t k = 0; k < count; ++k) {
+            const double closing = away(patch.point[k], patch.normal);
+            if (closing < -kRestSpeed) closingAtAll = true;
+        }
+        // The ends that are carrying, and what each of them has carried so far this
+        // tick.
+        bool live[kMaxPatchEnds] = {false, false};
+        double carried[kMaxPatchEnds] = {};
+        for (std::size_t k = 0; k < count; ++k) {
+            live[k] = true;
+            carried[k] = patch.normalImpulse[k];
+        }
+        for (std::size_t attempt = 0; withGrip ? false : attempt <= count; ++attempt) {
+            // The system over the ends still carrying: what each is closing at, and
+            // what the pair does when it is pressed at each of them.
+            std::size_t order[kMaxPatchEnds] = {}, dofs = 0;
+            double u[kMaxPatchEnds] = {}, g[kMaxPatchEnds][kMaxPatchEnds] = {};
+            // How far the face may still come down this tick.
+            //
+            // A face is either on the surface or it is still on its way in, and the
+            // two are answered differently, because they are different things.
+            //
+            // On its way in, each end may close exactly the distance it has left and
+            // not a micron more: that is a shape arriving, and the answer leaves it
+            // on the surface when the tick ends, rather than stopping short and being
+            // answered a tick late from inside.
+            //
+            // Once any end of the face is on the surface, the face is standing on
+            // something, and the ends that are on it may not close at all. That is
+            // the whole of it: zero, for every end that is touching.
+            //
+            // Zero and not "each its own gap", which is what it used to be, and which
+            // is a hinge. Two ends of one rigid face given two different distances to
+            // close cannot both obey -- the only way a rigid body closes one end by a
+            // tenth of a millimetre and the other by nothing is to turn, so the solver
+            // turned it. That turn was not free: friction is real, an end that is
+            // turning has a speed along the surface, and the grip answered it with an
+            // impulse along the surface at each end. The two ends' loads are not equal,
+            // so those two impulses do not cancel, and the pair was left with a small
+            // net push sideways -- a cube and a triangle resting on each other walking
+            // slowly along a level floor for ever, with no arrow on the screen pointing
+            // that way, because no force was pushing them. Only a contact being asked
+            // to hold a face that it had been told was turning. The numbers it turned
+            // on were two corners of one shape a ten-thousandth of a millimetre either
+            // side of the floor: noise, read as a lean, and then paid for by walking.
+            //
+            // Zero and not a recovery push, either. A corner that is *inside* the
+            // floor is a state the physics never puts the room in -- it gets there
+            // because the walk could not see it coming, or a hand dragged a shape into
+            // another -- and it is the walk's business, not the velocity's: the shape
+            // is moved out of it by its place, by separateBodies(), and nothing is
+            // added to its speed. Giving it a separating speed instead meant every
+            // resting shape was quietly lifted a fraction of a micron every tick,
+            // which is the slow climb a stacked pair was showing: the same contact,
+            // answered twice.
+            // Is this face lying on the surface, or landing on a corner of it?
+            //
+            // The two look alike from one end and are nothing alike. A face lying on
+            // something has its ends at the same height to within the thickness of a
+            // hair -- a millimetre across a shape seven hundred of them wide -- and
+            // whatever ails the pair of numbers, it is not that the shape is landing.
+            // A face coming down on a corner has one end near the surface and the
+            // other a long way above it, and that end is still falling.
+            //
+            // It matters because the two ends of one rigid face cannot close different
+            // distances over one tick: the only way a rigid body does that is to turn,
+            // and a face that is lying on something must not be turned by the noise in
+            // two numbers. Lying, the face is answered as one: it has one clearance,
+            // the deepest end's, and it may close that and nothing more. Landing, each
+            // end may close the distance it has left, which is what a corner coming
+            // down onto a floor is.
+            double lowest = 1e30, highest = -1e30;
+            for (std::size_t k = 0; k < count; ++k) {
+                if (!live[k]) continue;
+                lowest = std::min(lowest, patch.gap[k]);
+                highest = std::max(highest, patch.gap[k]);
+            }
+            const bool lying = highest - lowest <= kFaceFlat;
+            // Touching is closer than a micrometre, which is the room's own definition
+            // and the one the rest of it works to (see kQuantum): a face with a
+            // nanostmetre of daylight under it is standing on the surface, not on its
+            // way to it, and a clearance it is *allowed* to spend is a clearance it
+            // goes on hovering over. Measured: a square lying flat on the floor, which
+            // is as resting as a body gets, sat nineteen nanometres up and was let
+            // close three hundred and eighty nanometres a second of that gap every tick
+            // -- a speed the walk then refused, since it is a thousandth of a
+            // micrometre -- so the floor's answer was short of the weight by 3.1e-5 N,
+            // every tick, for ever, and the ledger could not balance it.
+            const double faceClose = lying && lowest > kQuantum ? lowest * (1.0 / kTick) : 0.0;
+            for (std::size_t k = 0; k < count; ++k) {
+                if (!live[k]) continue;
+                order[dofs] = k;
+                const double bias =
+                    lying ? faceClose
+                          : (patch.gap[k] > kQuantum ? patch.gap[k] * (1.0 / kTick) : 0.0);
+                // A face that bounces is a face that is *arriving*, and an arrival is
+                // a moment, not a whole tick. The clearance bias lets a face spend the
+                // tick closing the gap it has -- right for a shape settling onto a
+                // surface, wrong for one that is about to bounce off it: the closing
+                // speed it is allowed to keep is exactly the speed the bounce is
+                // measured against, so the two were paid out together, tick after
+                // tick, until a cube dropped a hand's width onto the ball came away at
+                // a quarter of what it should have. A bounce is answered at the
+                // instant the two meet, and it is the walk that carries the shape to
+                // that instant -- so there is no gap left to spend here.
+                // A ball spends no clearance, for the reason a bounce does not: the
+                // bias is what a *face* may pay of the distance it has left to a
+                // *plane*, and it is paid by letting the closing speed be spent over
+                // the tick. A ball is met at a point and it is round, and while the
+                // floor holds it its only way to answer a normal push is sideways --
+                // so the bias becomes a target speed the ball chases along the floor,
+                // metres a second of it, from a shape that has not touched it yet.
+                // The walk carries both of them to the instant they meet; what is
+                // answered here is the closing speed at that instant.
+                const bool spendsClearance = !onABall && patch.rebound[k] == 0.0;
+                u[dofs] = away(patch.point[k], patch.normal) + (spendsClearance ? bias : 0.0) - patch.rebound[k];
+                // Both halves of the matrix, because what one end is given at the
+                // other end's place is what the other end is given at its own: the
+                // answer is a push at one place and its reaction at another, and that
+                // is symmetric. Filled on one side only -- which is what this was --
+                // the system is not the room's, and its answer is not either: a face
+                // pressed at two ends came away with one end carrying half again the
+                // weight of the other, out of a coupling that was only asked one way.
+                for (std::size_t j = 0; j <= dofs; ++j) {
+                    const double coupled = give(patch.point[order[j]], patch.normal, patch.point[k], patch.normal);
+                    g[j][dofs] = coupled;
+                    g[dofs][j] = coupled;
+                }
+                ++dofs;
+            }
+            // The load each end needs to be left with no way into the surface, and
+            // whether an end had to be let go to get it.
+            bool lifting = false;
+            double delta[kMaxPatchEnds] = {};
+            if (dofs == 1) {
+                if (g[0][0] > 1e-18) delta[0] = -u[0] / g[0][0];
+            } else if (dofs == 2) {
+                // Two ends of one face pressed on one surface are two unknowns, and
+                // they are only independent when the thing under them can move both
+                // ways. A body that can only turn has one degree of freedom, and both
+                // ends of a patch drive that one number -- the turn -- so the system's
+                // determinant is nought to the last bit and there is no pair of loads
+                // that satisfies both equations.
+                //
+                // Solved as it stood, a determinant of nought meant the arithmetic
+                // answered *nothing at all*, and the code took that answer: the
+                // seesaw's own end sat on the floor closing at two metres a second and
+                // the ground pushed it with nought newtons, pass after pass. That is
+                // the pump the King saw: the plank kept a spin the floor never took
+                // from it, the sweep stopped the turn every tick short of the ground,
+                // and the plank was left with a speed that carried it nowhere. Every
+                // surface it touched was then told the plank was moving, and the ball
+                // beside its tip rolled through the tip.
+                //
+                // What is really unknown here is one number, not two: how much the
+                // load turns the body between them. Everything else about the split --
+                // which end carries what -- the pin takes, and nothing in the room can
+                // see the pin. So the answer is the *smallest* turn that leaves no live
+                // end with a way into the surface, shared out between the ends in
+                // proportion to their levers, which is the least any pair of loads can
+                // be while giving that turn.
+                const double det = g[0][0] * g[1][1] - g[0][1] * g[1][0];
+                const double scale = std::max(g[0][0] * g[1][1], 0.0);
+                if (std::abs(det) > 1e-12 * scale) {
+                    delta[0] = (-u[0] * g[1][1] + u[1] * g[0][1]) / det;
+                    delta[1] = (-u[1] * g[0][0] + u[0] * g[1][0]) / det;
+                } else if (scale > 0.0) {
+                    // The rank-one matrix, written as the outer product of one lever
+                    // per end: g = a a^T, and pressing the two ends by J changes what
+                    // each of them is closing at by a_k (a . J).
+                    const double a0 = std::sqrt(std::max(0.0, g[0][0]));
+                    const double a1 = a0 > 0.0 ? g[1][0] / a0 : 0.0;
+                    const double square = a0 * a0 + a1 * a1;
+                    // The turn wanted, as the smallest one that leaves both ends with
+                    // no way in: s >= -u_k / a_k for an end whose lever points the way
+                    // the turn goes, and the other way round for the other side.
+                    double least = 0.0, most = 1e30;
+                    bool impossible = false;
+                    const double leverOf[2] = {a0, a1};
+                    for (std::size_t i = 0; i < dofs && !impossible; ++i) {
+                        const double a = leverOf[i];
+                        if (std::abs(a) <= 1e-15 * std::sqrt(square)) {
+                            // An end right at the pin: pressing it turns nothing, so it
+                            // cannot be helped, and a load there would be a force the
+                            // pin takes and the body never feels.
+                            if (u[i] < 0.0) impossible = true;
+                            continue;
+                        }
+                        const double want = -u[i] / a;
+                        if (a > 0.0) least = std::max(least, want);
+                        else most = std::min(most, want);
+                    }
+                    if (impossible || least > most) {
+                        // The two ends cannot both be held: the one asking for the most
+                        // is let go, and the rest of the patch is answered without it.
+                        std::size_t hardest = 0;
+                        double worstWant = -1e30;
+                        for (std::size_t i = 0; i < dofs; ++i) {
+                            if (std::abs(leverOf[i]) <= 1e-15 * std::sqrt(square)) continue;
+                            if (leverOf[i] > 0.0 && -u[i] / leverOf[i] > worstWant) {
+                                worstWant = -u[i] / leverOf[i];
+                                hardest = i;
+                            }
+                        }
+                        live[order[hardest]] = false;
+                        lifting = true;
+                    } else if (square > 0.0) {
+                        for (std::size_t i = 0; i < dofs; ++i) delta[i] = least * leverOf[i] / square;
+                    }
+                }
+            }
+            for (std::size_t i = 0; i < dofs; ++i) {
+                const std::size_t k = order[i];
+                // An end is let go only when the load it would be left with is a
+                // pull. An end that needs exactly nothing keeps its place: it is
+                // still standing on something, and the pass after this one may well
+                // find it closing again.
+                if (carried[k] + delta[i] >= 0.0) continue;
+                // A pull: the floor lets go here. What this end took is given back
+                // and the rest of the patch is answered again without it.
+                pushEnd(k, patch.normal * -carried[k], patch.kind);
+                worst = std::max(worst, std::abs(carried[k]));
+                carried[k] = 0.0;
+                patch.normalImpulse[k] = 0.0;
+                live[k] = false;
+                lifting = true;
+            }
+            if (lifting) continue;
+            for (std::size_t i = 0; i < dofs; ++i) {
+                const std::size_t k = order[i];
+                if (delta[i] == 0.0) continue;
+                pushEnd(k, patch.normal * delta[i], patch.kind);
+                worst = std::max(worst, std::abs(delta[i]));
+                carried[k] += delta[i];
+                patch.normalImpulse[k] = carried[k];
+            }
+            break;
+        }
+        // The grip, over the face, against the load the face as a whole carries.
+        //
+        // Coulomb, in the two forms it has, and it is the same law in both: a surface
+        // holds along itself with whatever it takes to leave the face still against
+        // it, up to what the load on it can hold. The coefficient is what differs. A
+        // face that is already slipping is held by the sliding coefficient, and it is
+        // held by that much *only against the slip* -- a surface can stop a slide and
+        // can never drive one backwards.
+        //
+        // Over the face and not at its ends, because friction is a traction: it is
+        // spread across the area that is pressed, and its resultant runs through the
+        // middle of that area. Answered at one end and not at the other, friction that
+        // is nothing but a force along the surface arrives with a moment attached to
+        // it, and that moment is what turns a shape that is standing still. The two
+        // ends of a flat face on a flat surface have the same way of moving along it
+        // -- a rigid face cannot slide at one end and not the other -- so the answer
+        // is one impulse, shared equally between the ends that carry load. On a face
+        // that is turning, the two ends do slip differently, and the share is still
+        // equal in the sweep because the moment it must carry is in the levers, where
+        // the ends are; the sweep comes round again and again until the tractions
+        // agree with the load and the load agrees with them.
+        //
+        // A face with one end is the same rule with one share, which is the ordinary
+        // point contact.
+        // The ball's own grip is not solved here. It is one rigid body against
+        // every surface it meets at once, and a grip at one of its faces changes
+        // what is left to slip at all the others, so it is solved as one system in
+        // settleBallFriction() -- which also pairs each impulse with the shape that
+        // gave it. Solved here as well, the same face was gripped twice, once with
+        // the shape taken and once without, and the ball's turn was taken off it by
+        // an impulse nothing on the other side ever felt.
+        if (withGrip && !onABall) {
+        const double staticMu =
+            other != nullptr ? 0.5 * (body->staticFriction + other->staticFriction)
+            : onABall     ? std::min(body->staticFriction, ball_shape::kBallStaticFriction)
+                           : body->staticFriction;
+        const double kineticMu =
+            other != nullptr ? 0.5 * (body->kineticFriction + other->kineticFriction)
+            : onABall     ? std::min(body->kineticFriction, ball_shape::kBallKineticFriction)
+                           : body->kineticFriction;
+        // The ends that are pressed, and how much load is under the whole face.
+        //
+        // The grip is taken back and laid down afresh every sweep rather than added
+        // to, and the difference is the difference between a force and a memory of
+        // one. A sweep passes through states the room is never in -- a load answered
+        // before the shape above it has been answered -- and grip that is only ever
+        // added to keeps what it took in those moments and goes on holding with it:
+        // a face standing still on a surface, gripped by a force that is no longer
+        // needed, pushing the shape along until the sweep's end. Taken back first,
+        // grip is what the face needs *now*: a face that is not slipping is not being
+        // pushed, and a tick that ends at rest ends with no friction in it at all.
+        std::size_t pressed = 0;
+        double load = 0.0;
+        for (std::size_t k = 0; k < count; ++k) {
+            if (patch.tangentImpulse[k] != 0.0) {
+                pushEnd(k, tangent * -patch.tangentImpulse[k], ForceKind::Friction);
+                worst = std::max(worst, std::abs(patch.tangentImpulse[k]));
+                patch.tangentImpulse[k] = 0.0;
+            }
+            // A speculative normal row may keep a pair from closing farther than
+            // its clearance permits, but separated shapes cannot transmit friction.
+            // Do not turn a predicted future meeting into a tangential impulse.
+            if (!(patch.normalImpulse[k] > 0.0)) continue;
+            ++pressed;
+            load += patch.normalImpulse[k];
+        }
+        if (pressed > 0) {
+            // The face's slip: the slip of each pressed end, averaged, and what an
+            // equal share of impulse at every pressed end does to that average. The
+            // ends' levers are in it, so a share that turns the body is answered for
+            // as the turn it makes.
+            double slip = 0.0, total = 0.0;
+            for (std::size_t k = 0; k < count; ++k) {
+                if (!(patch.normalImpulse[k] > 0.0)) continue;
+                slip += away(patch.point[k], tangent);
+                for (std::size_t j = 0; j < count; ++j) {
+                    if (!(patch.normalImpulse[j] > 0.0)) continue;
+                    total += give(patch.point[k], tangent, patch.point[j], tangent);
+                }
+            }
+            const double n = static_cast<double>(pressed);
+            slip /= n;
+            const double response = total / (n * n);
+            if (response > 1e-12) {
+                const double mu = std::abs(slip) > kRestSpeed ? kineticMu : staticMu;
+                const double hold = mu * load;
+                double grip = -slip / response;
+                if (std::abs(grip) > hold) {
+                    // More than the surface can hold: it slips, and what it is given
+                    // is what the surface can give -- the rest of the slip is left in
+                    // the body's motion, where it belongs.
+                    grip = std::copysign(hold, grip);
+                }
+                const double share = grip / n;
+                for (std::size_t k = 0; k < count; ++k) {
+                    if (!(patch.normalImpulse[k] > 0.0)) continue;
+                    pushEnd(k, tangent * share, ForceKind::Friction);
+                    worst = std::max(worst, std::abs(share));
+                    patch.tangentImpulse[k] = share;
+                }
+            }
+        }
+        }
+        // This body is against the ball, and it is worth remembering: a contact that
+        // is still there next tick has not arrived at it.
+        if (onABall && patch.normalImpulse[0] > 0.0) body->onBall = true;
+        // What is under each end decides what each body is standing on.
+        //
+        // A patch is one meeting, held by whichever of the two is the lower-numbered
+        // awake body, so the one that is *on top* is usually not the one the patch is
+        // filed under. It is still carried, by the same load at the same ends, and it
+        // has to know it: a body that is supported and does not know it never comes to
+        // rest, never sleeps, and -- because nothing in it is at rest -- goes on being
+        // solved every tick for as long as the room is open. So a patch whose surface
+        // faces up carries its owner, and one whose surface faces down is its owner
+        // being pressed from above, which carries the other.
+        for (std::size_t k = 0; k < count; ++k) {
+            if (!(patch.normalImpulse[k] > 0.0)) continue;
+            if (patch.normal.y > 0.5) {
+                ++body->contacts;
+                if (other == nullptr && !onABall) {
+                    body->touchingPlane = true;
+                } else if (other != nullptr) {
+                    body->onBody = true;
+                    body->supportFrozen = other->frozen;
+                    body->supportBody = patch.other;
+                }
+                body->supportLow = std::min(body->supportLow, patch.point[k].x);
+                body->supportHigh = std::max(body->supportHigh, patch.point[k].x);
+            } else if (patch.normal.y < -0.5 && other != nullptr) {
+                other->onBody = true;
+                other->supportFrozen = body->frozen;
+                other->supportBody = patch.body;
+                other->supportLow = std::min(other->supportLow, patch.point[k].x);
+                other->supportHigh = std::max(other->supportHigh, patch.point[k].x);
+            }
+        }
+    };
+
+    // A patch's load and its grip are swept one after the other and not together,
+    // and the difference is the difference between a shape standing still and a shape
+    // walking to one side.
+    //
+    // A sweep passes through states the room is never in. In the middle of one, a
+    // body has been answered against the floor it stands on but not yet against what
+    // stands on it, so it is falling and turning in a way nothing in the room is
+    // doing -- and grip, which is read off the slip between two surfaces, reads the
+    // transient and holds against it. Held with a force the shape never really felt,
+    // the pair is pushed a little apart every tick: a slow walk, with nothing on
+    // screen to explain it, which is exactly what it is.
+    //
+    // So the load is answered first, on its own, and to convergence: at the end of
+    // that sweep the bodies are standing as they will stand. Then the grip is read
+    // off that state, against the load that state carries, and laid down. Grip lands
+    // a moment on a body that changes where it presses, so the load is asked again
+    // after it, and the two are asked again until they agree. The sweep ends on the
+    // load, so no tick finishes with a corner being driven into the floor.
+    const auto sweep = [&](bool withGrip) {
+        for (int pass = 0; pass < kSolvePasses; ++pass) {
+            worst = 0.0;
+            for (std::size_t m = 0; m < patches.count; ++m) {
+                const double beforePatchK = traceContext ? traceKinetic() : 0.0;
+                const Manifold& before = patches.items[m];
+                const Vec3 beforeBodyV = bodies_[before.body].velocity;
+                const double beforeBodyW = bodies_[before.body].spin;
+                const Vec3 beforeOtherV = before.other < kBodyCount ? bodies_[before.other].velocity : Vec3{};
+                const double beforeOtherW = before.other < kBodyCount ? bodies_[before.other].spin : 0.0;
+                const double oldJn0=before.normalImpulse[0], oldJt0=before.tangentImpulse[0];
+                const double beforeRelN=dot(pointSpeed(bodies_[before.body],before.point[0])-
+                    (before.other<kBodyCount?pointSpeed(bodies_[before.other],before.point[0]):Vec3{}),before.normal);
+                patchPass(patches.items[m], withGrip);
+                if (traceContext) {
+                    const Manifold& p=patches.items[m];
+                    const double afterPatchK=traceKinetic();
+                    const double deltaK=afterPatchK-beforePatchK;
+                    if (deltaK > 1e-7 || std::getenv("GTC_TRACE_PATCH_ALL"))
+                        std::printf("PATCH_SOLVE_TRACE context=%s grip=%d sweepPass=%d patch=%zu body=%zu other=%zu ball=%zu ends=%zu "
+                                    "dK=%+.12g n=(%.9g,%.9g) point=(%.9g,%.9g) relN=%.9g->%.9g bias=%.9g rebound=%.9g "
+                                    "dJn0=%+.9g dJt0=%+.9g jn=(%.9g,%.9g) jt=(%.9g,%.9g) gap=(%.9g,%.9g) "
+                                    "bodyV=(%.9g,%.9g)->(%.9g,%.9g) w=%.9g->%.9g otherV=(%.9g,%.9g)->(%.9g,%.9g) ow=%.9g->%.9g\n",
+                                    traceContext,int(withGrip),pass,m,p.body,p.other,p.ball,p.ends,deltaK,
+                                    p.normal.x,p.normal.y,p.point[0].x,p.point[0].y,
+                                    beforeRelN,
+                                    dot(pointSpeed(bodies_[p.body],p.point[0])-
+                                        (p.other<kBodyCount?pointSpeed(bodies_[p.other],p.point[0]):Vec3{}),p.normal),
+                                    p.gap[0]>kQuantum?p.gap[0]/kTick:0.0,p.rebound[0],
+                                    p.normalImpulse[0]-oldJn0,p.tangentImpulse[0]-oldJt0,
+                                    p.normalImpulse[0],p.normalImpulse[1],p.tangentImpulse[0],p.tangentImpulse[1],p.gap[0],p.gap[1],
+                                    beforeBodyV.x,beforeBodyV.y,bodies_[p.body].velocity.x,bodies_[p.body].velocity.y,
+                                    beforeBodyW,bodies_[p.body].spin,beforeOtherV.x,beforeOtherV.y,
+                                    p.other<kBodyCount?bodies_[p.other].velocity.x:0.0,
+                                    p.other<kBodyCount?bodies_[p.other].velocity.y:0.0,
+                                    beforeOtherW,p.other<kBodyCount?bodies_[p.other].spin:0.0);
+                }
+            }
+            if (worst < kImpulseTolerance && pass > 0) break;
+        }
+    };
+    for (int round = 0; round < kGripRoundsMax; ++round) {
+        sweep(false);
+        const double loadWorst = worst;
+        sweep(true);
+        const double gripWorst = worst;
+        // Both answers have stopped moving: the load the room is carrying and the
+        // grip holding it agree with each other, which is where the sweep is done.
+        if (loadWorst < kAgree && gripWorst < kAgree) break;
+    }
+    sweep(false);
+    if (traceContext)
+        std::printf("CONTACT_SOLVE_END context=%s id=%llu patches=%zu K=%.12g dK=%+.12g closing=%d\n",
+                    traceContext,static_cast<unsigned long long>(thisSolveTraceId),patches.count,
+                    traceKinetic(),traceKinetic()-solveKineticBefore,int(closingAtAll));
+    return closingAtAll;
+}
+
+}  // namespace gtc::native

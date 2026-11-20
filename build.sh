@@ -14,14 +14,6 @@ if [ -f "$SEED" ] && [ -z "$(find "$CCACHE_DIR" -mindepth 1 -maxdepth 1 -print -
 fi
 
 COMPILER="${CXX:-g++}"
-if ! command -v "$COMPILER" >/dev/null 2>&1; then
-  if command -v clang++ >/dev/null 2>&1; then
-    COMPILER=clang++
-  else
-    echo 'No C++ compiler found. Install g++ or clang++.' >&2
-    exit 1
-  fi
-fi
 CCACHE_BIN="${CCACHE:-}"
 if [ -z "$CCACHE_BIN" ] && [ -x "$ROOT/tools/ccache/linux-x86_64/ccache" ]; then
   CCACHE_BIN="$ROOT/tools/ccache/linux-x86_64/ccache"
@@ -43,7 +35,7 @@ if [ "${#SOURCES[@]}" -eq 0 ]; then
   echo '[build] No sources found.' >&2
   exit 1
 fi
-FLAGS=(-std=c++17 -O2 -pthread -Wall -Wextra -Wpedantic -Isrc)
+FLAGS=(-std=c++20 -O2 -pthread -Wall -Wextra -Wpedantic -Isrc)
 OBJECTS=()
 for SOURCE in "${SOURCES[@]}"; do
   RELATIVE="${SOURCE#src/}"
@@ -64,6 +56,8 @@ if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
 fi
 echo "[build] Success: $ROOT/build/bin/gtc1453"
 if [ -n "$CCACHE_BIN" ]; then "$CCACHE_BIN" --show-stats; fi
+# A green build is a checkpoint: everything that changed is committed and pushed.
+bash "$ROOT/tools/sync-cache.sh" || true
 if [ "${1:-}" = "--run" ]; then
   exec "$ROOT/build/bin/gtc1453"
 fi

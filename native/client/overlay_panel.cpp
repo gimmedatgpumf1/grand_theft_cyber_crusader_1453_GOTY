@@ -87,7 +87,7 @@ void drawOverlayPanel(NativeFrame& frame, const OverlayPanelLayout& layout, cons
     if (layout.width <= 0 || layout.height <= 0) return;
     fillPanel(frame, layout.left, layout.top, layout.width, layout.height, kMenuPanelOpacity);
 
-    const Color ink = colorHex(kInkColour), muted = colorHex(kMutedColour);
+    const Color ink = colorHex(hexRgb(kInkColour)), muted = colorHex(hexRgb(kMutedColour));
     const auto centredAt = [&](const char* text, int top, int height, Color colour) {
         if (text == nullptr) return;
         const std::string line(text);
@@ -129,7 +129,8 @@ constexpr OverlayRow kManualRows[] = {
     {"MMB", "Orbit camera"},
     {"G-LMB", "Attack, advanced"},
     {"G-RMB", "Path, Shift run"},
-    {"C", "Test room"},
+    {"C", "Skeleton room"},
+    {"P", "Playground"},
     {"F1", "Needs"},
     {"H", "This sheet"},
     {"F12", "Screenshot"},

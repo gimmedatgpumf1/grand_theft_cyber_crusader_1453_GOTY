@@ -5,7 +5,11 @@
 #include "client/skeleton_body.h"
 #include "client/skeleton_comparison.h"
 #include "client/skeleton_lines.h"
-#include "client/skeleton_ragdoll.h"
+#include "client/skeleton_toe_editor.h"
+#include "client/skeleton_toe_blue_calibration.h"
+#include "client/skeleton_toe_manual_reference.h"
+#include "client/skeleton_toe_blue_reference.h"
+#include <memory>
 
 #include <cstdint>
 #include <utility>
@@ -34,12 +38,12 @@ public:
         SkeletonComparison& copy=male ? maleComparison_ : femaleComparison_;
         const auto revision=copy.revision();
         if (!copy.setProfile(profile,error)) return false;
-        if (revision!=copy.revision()) lineSceneReady_=false;
+        if (revision!=copy.revision()) { updateToeSkinCalibration(male); lineSceneReady_=false; }
         return true;
     }
     void resetComparison(bool male) {
         std::string error; (male ? maleComparison_ : femaleComparison_).reset(error);
-        lineSceneReady_=false;
+        updateToeSkinCalibration(male); lineSceneReady_=false;
     }
     bool lineView() const { return lineView_; }
     void toggleLineView() { lineView_ = !lineView_; }
@@ -48,26 +52,63 @@ public:
     bool adjustReferenceGroup(int key, double degrees, int fingerJoint = 0);
     bool restoreReferencePose(); // straight-arm, straight-leg reference pose
     bool restoreOriginalPose(); // original registered CT pose
-    bool toggleRagdoll();
-    void advanceRagdoll(double seconds);
-    bool ragdollActive() const { return bool(ragdoll_); }
-    const SkeletonRagdoll* ragdoll() const { return ragdoll_.get(); }
-
+    bool editToe(const ToeEdit& edit);
+    bool undoToeEdit(bool sourceEdits=false);
+    bool resetToeEdits(const ToeEdit& selection,bool sourceEdits=false);
+    bool saveToeEdits() const;
+    bool loadToeEdits();
+    bool showOriginalToeEdits();
+    bool toeEditingAvailable() const { return ready_; }
+    bool originalToePose() const { return originalToePose_; }
+    bool unmodifiedToeSource() const { return originalToePose_ && !originalToeEditsVisible_; }
+    std::optional<std::array<Vec3,2>> toeAxis(bool male,const std::string& name) const {
+        return (male?maleLines_:femaleLines_).sourceBoneEndpoints(name);
+    }
+    void resetDisplayToeAxes() { maleDisplayLines_=maleLines_;femaleDisplayLines_=femaleLines_;maleToeMarks_.clear();femaleToeMarks_.clear();++toeMarksRevision_;lineSceneReady_=false; }
+    void setDisplayToeAxis(bool male,const std::string& name,const std::array<Vec3,2>& ends,unsigned placed) {
+        (male?maleDisplayLines_:femaleDisplayLines_).setBoneEndpoints(name,ends);
+        (male?maleToeMarks_:femaleToeMarks_)[name]={ends,placed};++toeMarksRevision_;lineSceneReady_=false;
+    }
+    const std::string& toeEditError() const { return toeEditError_; }
+    std::size_t toeEditCount() const { return toeEdits_.size(); }
+    std::uint64_t toeEditRevision() const { return toeEditRevision_; }
+    std::vector<std::array<double,16>> comparisonToePose(bool male,Vec3 origin,
+        std::vector<ComparisonToeAttachment>* surfaceJoints=nullptr) const;
+    std::optional<std::array<Vec3,2>> blueToeAxis(bool male,char side,int digit,int segment) const;
     void render(NativeFrame& frame, const ViewState& view, double seconds, const RoomFreecam* freecam = nullptr);
 
 private:
-    std::unique_ptr<SkeletonRagdoll> ragdoll_;
+    void updateToeSkinCalibration(bool male);
+    const ToeSurfaceMarks& mappedBlueToeMarks(bool male) const;
     SkeletonModel male_;
     SkeletonModel female_;
     SkeletonComparison maleComparison_, femaleComparison_;
-    SkeletonLines maleLines_, femaleLines_;
+    SkeletonLines maleLines_, femaleLines_, maleDisplayLines_, femaleDisplayLines_;
+    ToeSurfaceMarks maleToeMarks_,femaleToeMarks_;
+    struct BlueMarkCache {ToeSurfaceMarks marks;std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{};};
+    mutable BlueMarkCache maleBlueMarks_,femaleBlueMarks_;
+    struct BlueReferenceCache {
+        MarkedBlueToeReference reference;
+        std::vector<std::array<double,16>> standingPose;
+        std::vector<ComparisonToeAttachment> standingJoints;
+        std::vector<std::array<double,2>> recoveryBounds;
+        std::uint64_t source=~std::uint64_t{},profile=~std::uint64_t{},neutral=~std::uint64_t{},edits=~std::uint64_t{};
+        Vec3 origin{};
+    };
+    mutable BlueReferenceCache maleBlueReference_,femaleBlueReference_;
+    std::uint64_t toeMarksRevision_=0,toeReferenceRevision_=0;
+    std::vector<std::array<double,16>> maleToeNeutral_,femaleToeNeutral_,maleToeBeforeCalibration_,femaleToeBeforeCalibration_;
+    ManualToeReference maleManualToes_,femaleManualToes_;
     GpuScene lineScene_;
     bool ready_ = false;
     bool lineView_ = false;
     double maleFloor_ = 0, femaleFloor_ = 0;
     bool lineSceneReady_ = false;
     std::uint64_t lineMalePoseRevision_ = 0, lineFemalePoseRevision_ = 0;
-    std::string error_;
+    std::string error_, toeEditsPath_, toeEditError_;
+    std::vector<ToeEdit> toeEdits_;
+    std::uint64_t toeEditRevision_=0;
+    bool originalToePose_=false, originalToeEditsVisible_=false;
     // The room's geometry is kept between frames when the GPU path draws it:
     // two skeletons are three hundred thousand triangles, and re-sending them
     // every frame is the cost this path exists to remove.
@@ -80,6 +121,7 @@ private:
     // Rest geometry is emitted once; a pose then costs one matrix per bone. The
     // pair is the batch index each source structure owns, so a pose update
     // changes transforms without re-uploading its mesh vertices.
+    bool littleToeReady_ = false;
     bool restReady_ = false;
     std::vector<std::pair<std::uint32_t, std::size_t>> boneBatches_;
     std::vector<std::array<double, 16>> cachedMaleMatrices_;

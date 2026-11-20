@@ -58,7 +58,7 @@ namespace {
 // bind per draw), and it is actually shaded -- a flat batch is one colour and
 // costs nothing to draw on its own.
 bool coalescable(const GpuBatch& batch) {
-    if (batch.indices.empty()) return false;
+    if (batch.indices.empty() || batch.vertexSkinned) return false;
     if (texturedMaterial(batch.material)) return false;
     if (batch.material.constantLighting || batch.material.unlit) return false;
     return true;
@@ -98,7 +98,8 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
         // One batch on its own is a draw either way, and there is no point
         // spending a slot on it. A run that would run past the array is left
         // alone rather than split: a body of bones is one draw or no draw.
-        if (last == index || slot + (last - index + 1) > kBatchSlots) {
+        const bool skinSingle=last==index && scene.batches[index].skinOwner;
+        if ((last == index && !skinSingle) || slot + (last - index + 1) > kBatchSlots) {
             index = last + 1;
             continue;
         }

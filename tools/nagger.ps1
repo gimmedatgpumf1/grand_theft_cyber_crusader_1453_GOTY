@@ -14,10 +14,12 @@ foreach ($File in $Files) {
     } finally {
         $Reader.Dispose()
     }
+    $Relative = $File.FullName.Substring($Root.Length).TrimStart('\', '/')
     if ($Lines -gt 1000) {
-        $Relative = $File.FullName.Substring($Root.Length).TrimStart('\', '/')
         Write-Error "[NAGGER] $Relative has $Lines lines. Split it, you absolute landfill."
         $Failed = $true
+    } elseif ($Lines -ge 750) {
+        Write-Host "[NAGGER] $Relative has $Lines lines. Time to split or I will spit!" -ForegroundColor Yellow
     }
 }
 if (-not $Failed) {
