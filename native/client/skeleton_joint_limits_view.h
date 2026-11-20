@@ -88,9 +88,9 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
             break;
         }
         const Vec3 target=blue?blueCenter[ci]:rawCenter[ci]+origin;
-        const double radius=toeBend ? std::clamp(markedChildLength*.55,.006,.025)
-                                    : std::clamp(length(target-center)*.55,.006,.075);
-        const double width=std::clamp(radius*.07,.0007,.0018);
+        const double radius=toeBend ? std::clamp(markedChildLength*.8,.01,.04)
+                                    : std::clamp(length(target-center)*.8,.01,.12);
+        const double width=std::clamp(radius*.1,.001,.003);
         const int owner=blue?int(id+pi):int(pi),childOwner=blue?int(id+ci):int(ci);
         arcs.dot(center,std::clamp(radius*.18,.0018,.006),owner);
         // Every rotational axis gets its own arc in its own plane.
