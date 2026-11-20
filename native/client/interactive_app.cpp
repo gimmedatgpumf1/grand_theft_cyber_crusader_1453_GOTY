@@ -52,7 +52,7 @@ int App::run() {
                 std::cerr << error << '\n';
                 return 1;
             }
-            if (testRoom_ || playgroundMode_) bodyTrackReady_ = false;
+            if (testRoom_) bodyTrackReady_ = false;
             else trackBodyTurn();
             events_.clear();
             if (!window_.poll(events_)) break;
@@ -61,14 +61,7 @@ int App::run() {
                 if (event.type == WindowEvent::Type::Close) running = false;
             else handle(event);
             }
-            if (playgroundMode_) {
-                if (playgroundDragging_) updatePlaygroundDragRay();
-                // Paused (D): the ticking stops entirely, but the hand still
-                // carries what it holds -- dragging is not ticking. Stepping
-                // is done by the . and , keys, one tick at a time.
-                if (!debugPaused_) playground_.advance(dt);
-                else playground_.updateDragNow();
-            } else if (testRoom_) {
+            if (testRoom_) {
                 roomCamera_.move(dt);
             } else updateGod(dt);
             if (now - inputTime >= std::chrono::milliseconds(50)) {
@@ -78,31 +71,26 @@ int App::run() {
             updatePresentation();
             updateHighlight();
             updateReticle();
-            if (playgroundMode_ || (testRoom_ && room_.ready())) {
+            if (testRoom_ && room_.ready()) {
                 const double seconds = std::chrono::duration<double>(now.time_since_epoch()).count();
                 // Room controls are GPU batches, just like the normal HUD.
                 frame.width=std::max(1,view_.width); frame.height=std::max(1,view_.height);
-                if (!playgroundMode_ && toeEditorUi_.open() && !toeWorkspace_.prepare(frame,room_,toeEditorUi_)) {
+                if (toeEditorUi_.open() && !toeWorkspace_.prepare(frame,room_,toeEditorUi_)) {
                     std::cerr << "Unable to prepare toe editor\n"; return 1;
                 }
                 layer_.clear(frame.width,frame.height); frame.ui=&layer_;
                 frame.uiScale=1.0; frame.uiOffsetX=frame.uiOffsetY=0.0;
-                if (playgroundMode_) { drawFpsCounter(frame,view_.fps); drawPlaygroundDebug(frame); }
-                else if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
+                if (toeEditorUi_.open()) { toeWorkspace_.drawUi(frame,toeEditorUi_); toeEditorUi_.draw(frame,room_); }
                 else { roomUi_.draw(frame,room_); drawFpsCounter(frame,view_.fps); }
                 if (captured_) {
-                    const bool dragging=playgroundMode_ && playgroundDragging_;
-                    const int x=int(std::lround(dragging ? roomDragX_ : view_.width*0.5));
-                    const int y=int(std::lround(dragging ? roomDragY_ : view_.height*0.5));
+                    const int x=int(std::lround(view_.width*0.5));
+                    const int y=int(std::lround(view_.height*0.5));
                     const Color ink=colorHex("#d7ff54");
                     frame.rectangle(x-5,y,11,1,ink); frame.rectangle(x,y-5,1,11,ink);
                 }
                 frame.ui=nullptr; frame.uiLayer=&layer_; frame.interfaceInFrame=false;
                 frame.wantPixels = screenshot_;
-                if (playgroundMode_) {
-                    if (!playground_.render(frame,view_,playgroundCamera_)) { std::cerr << "Unable to draw playground\n"; return 1; }
-                    frame.logicalUi();
-                } else if (toeEditorUi_.open()) {
+                if (toeEditorUi_.open()) {
                     if (!toeWorkspace_.render(frame)) {
                         std::cerr << "Unable to draw toe editor\n"; return 1;
                     }
@@ -172,104 +160,8 @@ int App::run() {
         return 0;
     }
 
-// The debug overlay for the playground: the paused status strip, the hint, and
-// the physics log panel. All of it is interface quads and glyphs, like the FPS
-// counter -- the same frame.ui layer, the same text.
-void App::drawPlaygroundDebug(NativeFrame& frame) {
-    // Sized like the FPS counter (fpsCounterTextHeight): 13px at 640x480,
-    // growing with the window, floored at 20 because that is the size this
-    // game's text has always been drawn at.
-    const int pixelHeight = std::clamp(
-        static_cast<int>(std::lround(13.0 * std::max(1, frame.height) / 480.0)), 20, 44);
-    const int lineHeight = std::max(1, textHeightPixels(pixelHeight)) + 2;
-    const Color ink = colorHex(hexRgb("#e6edf2"));
-    const Color accent = colorHex(hexRgb("#d7ff54"));
-    const Color panel = colorHex(hexRgb("#05090b"));
-    const double previousScale = frame.uiScale;
-    const double previousOffsetX = frame.uiOffsetX;
-    const double previousOffsetY = frame.uiOffsetY;
-    frame.uiScale = 1.0;
-    frame.uiOffsetX = 0.0;
-    frame.uiOffsetY = 0.0;
-    const auto strip = [&](int x, int y, const std::string& text, Color color) {
-        const int width = textWidthPixels(text, pixelHeight);
-        const int height = textHeightPixels(pixelHeight);
-        if (width <= 0 || height <= 0) return;
-        const int padding = std::max(6, pixelHeight / 3);
-        frame.blendRectangle(x, y, width + padding * 2, height + padding * 2, panel, 0.75);
-        drawTextPixels(frame, x + padding, y + padding, text, color, pixelHeight);
-    };
-    if (debugPaused_) {
-        char status[160];
-        std::snprintf(status, sizeof(status),
-                      "PAUSED tick %llu (history %zu)",
-                      static_cast<unsigned long long>(playground_.tickCount()),
-                      playground_.debugHistoryDepth());
-        strip(8, 8, status, accent);
-    }
-    if (debugLogOpen_) {
-        const std::vector<std::string>& log = playground_.tickLog();
-        char header[96];
-        std::snprintf(header, sizeof(header), "PHYSICS LOG - tick %llu (wheel scrolls)",
-                      static_cast<unsigned long long>(playground_.tickCount()));
-        const int margin = 8;
-        const int padding = std::max(6, pixelHeight / 3);
-        // Long log lines are wrapped to fit the panel, so nothing runs off the
-        // edge of the window. The panel is at most 62% of the window wide.
-        const int maxTextWidth = std::max(lineHeight, int(frame.width * 0.62) - padding * 2);
-        const auto wrap = [&](const std::string& text) {
-            std::vector<std::string> out;
-            std::string current;
-            std::size_t pos = 0;
-            while (pos < text.size()) {
-                std::size_t end = text.find(' ', pos);
-                if (end == std::string::npos) end = text.size();
-                std::string word = text.substr(pos, end - pos);
-                std::string trial = current.empty() ? word : current + " " + word;
-                if (textWidthPixels(trial, pixelHeight) <= maxTextWidth || current.empty()) {
-                    current = trial;
-                } else {
-                    out.push_back(current);
-                    current = word;
-                }
-                pos = end + 1;
-            }
-            if (!current.empty() || out.empty()) out.push_back(current);
-            return out;
-        };
-        std::vector<std::string> visual;
-        for (const std::string& line : log) {
-            std::vector<std::string> wrapped = wrap(line);
-            visual.insert(visual.end(), wrapped.begin(), wrapped.end());
-        }
-        const int panelHeight = std::max(lineHeight * 4, frame.height - margin * 2);
-        const int visible = std::max(1, (panelHeight - lineHeight * 2) / lineHeight);
-        const int maxScroll = std::max(0, int(visual.size()) - visible);
-        debugLogScroll_ = std::clamp(debugLogScroll_, 0, maxScroll);
-        int panelWidth = textWidthPixels(header, pixelHeight);
-        const int last = std::min(int(visual.size()), debugLogScroll_ + visible);
-        for (int i = debugLogScroll_; i < last; ++i)
-            panelWidth = std::max(panelWidth, textWidthPixels(visual[std::size_t(i)], pixelHeight));
-        panelWidth = std::min(panelWidth + padding * 2, int(frame.width * 0.62));
-        const int x = frame.width - panelWidth - margin;
-        const int y = margin;
-        frame.blendRectangle(x, y, panelWidth, panelHeight, panel, 0.85);
-        drawTextPixels(frame, x + padding, y + padding, header, accent, pixelHeight);
-        for (int i = debugLogScroll_; i < last; ++i)
-            drawTextPixels(frame, x + padding, y + padding + lineHeight * (i - debugLogScroll_ + 1),
-                           visual[std::size_t(i)], ink, pixelHeight);
-        if (visual.empty())
-            drawTextPixels(frame, x + padding, y + padding + lineHeight, "(no tick yet - press . to step)",
-                           ink, pixelHeight);
-    }
-    frame.uiScale = previousScale;
-    frame.uiOffsetX = previousOffsetX;
-    frame.uiOffsetY = previousOffsetY;
-}
-
 void App::handle(const WindowEvent& event) {
         if (event.type == WindowEvent::Type::FocusLoss) {
-            stopPlaygroundDrag(); playgroundCamera_.clear(); playgroundRestoreCapture_=false;
             roomUi_.handle(event,captured_,view_.width,view_.height,room_);
             roomCamera_.clear();
             roomRestoreCapture_ = false;
@@ -281,10 +173,8 @@ void App::handle(const WindowEvent& event) {
             restoreMouseCapture_ = false;
             return;
         }
-        if (playgroundMode_) { handlePlayground(event); return; }
         if (testRoom_) {
-            if (event.type==WindowEvent::Type::KeyDown && event.key=='p' && !event.repeat) enterPlayground();
-            else handleRoom(event);
+            handleRoom(event);
             return;
         }
         if (event.type == WindowEvent::Type::MouseMove) {
@@ -427,7 +317,6 @@ void App::handle(const WindowEvent& event) {
         else if (event.key == 'e') interact();
         else if (event.key == kKeyF1) openOverlay(Overlay::Cheats);
         else if (event.key == 'c') { if (!event.repeat) enterRoom(); }
-        else if (event.key == 'p') { if (!event.repeat) enterPlayground(); }
         else if (event.key == 'h') openOverlay(Overlay::Help);
         else {
             keys_.insert(event.key);
@@ -483,7 +372,7 @@ void App::sendInput() {
         const ViewState control = controlView();
         float yaw = local() ? local()->yaw : control.yaw;
         view_.aiming = false;
-        const bool gameControls = !testRoom_ && !playgroundMode_ && overlay_ == Overlay::None;
+        const bool gameControls = !testRoom_ && overlay_ == Overlay::None;
         crouch = gameControls && keys_.count(kKeyAlt) != 0;
         if (gameControls && view_.mode != ViewMode::God) {
             const double forward = (keys_.count('w') ? 1 : 0) - (keys_.count('s') ? 1 : 0);
@@ -501,7 +390,7 @@ void App::sendInput() {
         view_.slowWalk = slowWalk_;
         gtc::Vec2 aimTarget{};
         float aimHeight = 0.0F;
-        const bool hasAimTarget = !testRoom_ && !playgroundMode_ && ranged && view_.mode != ViewMode::God &&
+        const bool hasAimTarget = !testRoom_ && ranged && view_.mode != ViewMode::God &&
             crosshairTarget(control, aimTarget, aimHeight);
         client_.sendInput(move, sprint, piss, yaw, control.pitch, slowWalk_, crouch, grab, jump, block,
                           aimTarget, aimHeight, hasAimTarget);

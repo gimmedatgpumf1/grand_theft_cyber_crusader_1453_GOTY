@@ -3,7 +3,6 @@
 #include "client/client.h"
 #include "client/renderer.h"
 #include "client/skeleton_room.h"
-#include "client/playground_room.h"
 #include "client/skeleton_comparison_ui.h"
 #include "client/skeleton_toe_editor_ui.h"
 #include "client/skeleton_toe_workspace.h"
@@ -411,112 +410,6 @@ private:
         }
     }
 
-    void updatePlaygroundDragRay() {
-        const Camera camera=playgroundCamera_.camera(view_.width,view_.height,view_.gpu);
-        const double x=(roomDragX_-camera.width*0.5)/camera.focal(),y=(camera.height*0.5-roomDragY_)/camera.focal();
-        playground_.setDragRay(camera.position,normalized(camera.world({x,y,1.0})-camera.position));
-    }
-    void stopPlaygroundDrag() { playgroundDragging_=false; playground_.endDrag(); }
-    void enterPlayground() {
-        playground_.setDotOnly(true);
-        if (!playground_.reset()) { std::cerr << "Unable to start playground\n"; return; }
-        debugPaused_ = false; debugLogOpen_ = false; debugLogScroll_ = 0;
-        playgroundReturnToRoom_=testRoom_; roomCamera_.clear(); endOrbit();
-        playgroundRestoreCapture_=captured_; keys_.clear(); leftDown_=rightDown_=false;
-        testRoom_=false; playgroundMode_=true;
-        playgroundCamera_.reset({0,1.4,3.2},0,0);
-        window_.captureMouse(true); captured_=true; sendInput();
-    }
-    void leavePlayground() {
-        stopPlaygroundDrag(); playgroundCamera_.clear(); playgroundMode_=false;
-        debugPaused_ = false; debugLogOpen_ = false; debugLogScroll_ = 0;
-        testRoom_=playgroundReturnToRoom_; playgroundReturnToRoom_=false;
-        window_.captureMouse(playgroundRestoreCapture_); captured_=playgroundRestoreCapture_;
-        playgroundRestoreCapture_=false; keys_.clear(); sendInput();
-    }
-    // The debug overlay: the paused status strip and the physics log panel.
-    void drawPlaygroundDebug(NativeFrame& frame);
-    void handlePlayground(const WindowEvent& event) {
-        if (event.type==WindowEvent::Type::KeyDown && event.key=='p') { if (!event.repeat) leavePlayground(); return; }
-        if (playgroundDragging_ && event.type==WindowEvent::Type::MouseUp && event.button==1) { stopPlaygroundDrag(); return; }
-        if (playgroundDragging_ && event.type==WindowEvent::Type::MouseMove) {
-            roomDragX_=std::clamp(captured_ ? roomDragX_+event.dx : event.x,0.0,double(std::max(1,view_.width)-1));
-            roomDragY_=std::clamp(captured_ ? roomDragY_+event.dy : event.y,0.0,double(std::max(1,view_.height)-1));
-            updatePlaygroundDragRay(); return;
-        }
-        if (event.type==WindowEvent::Type::MouseDown && event.button==1) {
-            playgroundDragging_=true; roomDragX_=captured_ ? view_.width*0.5 : event.x;
-            roomDragY_=captured_ ? view_.height*0.5 : event.y;
-            updatePlaygroundDragRay(); playground_.beginDrag(); return;
-        }
-        if (event.type==WindowEvent::Type::MouseDown && event.button==3 && !captured_) {
-            window_.captureMouse(true); captured_=true; return;
-        }
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='c') { leavePlayground(); return; }
-        // R puts the room back the way it starts: the shapes at their starting poses,
-        // the dot at the top of the room, the ball on its stand, nothing carried, and
-        // the camera back at the opening view. A reset that leaves the camera over the
-        // far end of the room is not a reset of the room, it is a reset of the shapes.
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='r') {
-            stopPlaygroundDrag(); playground_.reset(); playgroundCamera_.reset({0,1.4,3.2},0,0); return;
-        }
-        // F shows what is pushing what, as arrows scaled by the force. N adds the
-        // numbers in newtons and the room's energy, so the arrows can be read as
-        // amounts rather than as directions only.
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='f') { playground_.toggleForceArrows(); return; }
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='n') { playground_.toggleForceNewtons(); return; }
-        // D pauses the ticking; pressing it again resumes. While paused, . steps
-        // one tick forward and , steps one tick back, so exactly what happens
-        // in each tick can be watched. / opens the physics log: every speed,
-        // energy, contact and force of the tick on screen, scrollable with the
-        // wheel. Stepping pauses first if the room was running, so the keys
-        // mean the same thing either way.
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='d') {
-            debugPaused_ = !debugPaused_;
-            if (!debugPaused_) playground_.resumeFromPause();
-            debugLogScroll_ = 0;
-            return;
-        }
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='.') {
-            if (!debugPaused_) { debugPaused_ = true; playground_.resumeFromPause(); }
-            playground_.stepOnce();
-            debugLogScroll_ = 0;
-            return;
-        }
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==',') {
-            if (!debugPaused_) { debugPaused_ = true; playground_.resumeFromPause(); }
-            playground_.stepBack();
-            debugLogScroll_ = 0;
-            return;
-        }
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key=='/') {
-            debugLogOpen_ = !debugLogOpen_;
-            debugLogScroll_ = 0;
-            // Opening the log with no tick yet (paused before the first tick,
-            // or just after a reset): step once so the panel shows a real
-            // tick's calculations instead of the empty placeholder.
-            if (debugLogOpen_ && playground_.tickLog().empty())
-                playground_.stepOnce();
-            return;
-        }
-        if (debugLogOpen_ && event.type==WindowEvent::Type::Wheel) {
-            debugLogScroll_ = std::max(0, debugLogScroll_ - int(event.wheel * 3.0));
-            return;
-        }
-        if (event.type==WindowEvent::Type::KeyDown && !event.repeat && event.key==kKeyF12) { screenshot_=true; return; }
-        if (event.type==WindowEvent::Type::KeyDown && event.key==kKeyEscape) {
-            stopPlaygroundDrag(); window_.captureMouse(false); captured_=false; return;
-        }
-        const auto action=playgroundCamera_.handle(event,captured_);
-        if (action==RoomFreecam::Action::Exit) leavePlayground();
-        else if (action==RoomFreecam::Action::Capture) { window_.captureMouse(true); captured_=true; }
-        else if (action==RoomFreecam::Action::Release) { stopPlaygroundDrag(); window_.captureMouse(false); captured_=false; }
-        else if (action==RoomFreecam::Action::Screenshot) screenshot_=true;
-        else if (action==RoomFreecam::Action::RestorePose) {
-            stopPlaygroundDrag(); if (!playground_.reset()) std::cerr << "Unable to reset playground\n";
-        }
-    }
-
     void handle(const WindowEvent& event);
 
 
@@ -533,13 +426,7 @@ private:
 
 
     SkeletonRoom room_;
-    PlaygroundRoom playground_;
-    // Debug stepping: D pauses the ticking, . and , step one tick forward and
-    // back, / opens the physics log. The log scrolls with the wheel while open.
-    bool debugPaused_ = false, debugLogOpen_ = false;
-    int debugLogScroll_ = 0;
-    RoomFreecam roomCamera_,playgroundCamera_;
-    bool playgroundMode_=false,playgroundDragging_=false,playgroundReturnToRoom_=false,playgroundRestoreCapture_=false;
+    RoomFreecam roomCamera_;
     SkeletonComparisonUi roomUi_;
     SkeletonToeEditorUi toeEditorUi_;
     bool testRoom_ = false;
