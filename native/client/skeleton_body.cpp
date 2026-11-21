@@ -429,7 +429,7 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
             error = "Source rig must be attached at its bind pose"; return false;
         }
     }
-    for (std::size_t body=0;body<rig.size();++body) if(!seen[body]) {
+    for (std::size_t body=1;body<rig.size();++body) if(!seen[body]) {
         error = "Source rig body map leaves a rig node unmapped"; return false;
     }
     sourceRig_ = std::move(rig);

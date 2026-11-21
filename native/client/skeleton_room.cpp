@@ -43,7 +43,6 @@ double minimumY(const SkeletonModel& model) {
 void drawComparisonPairedLongBones(Rasterizer& rasterizer,const SkeletonLines& lines,
     const SkeletonModel& model,const SkeletonComparison& comparison,
     const std::vector<std::array<double,16>>& pose,Vec3 origin,std::uint32_t idBase) {
-    const auto& structures=model.sourceStructures();
     const auto& parts=comparison.parts();
     if(pose.size()!=parts.size())return;
     Material material;material.color=colorHex("#358fff");material.specular=0.12;

@@ -70,6 +70,9 @@ CLIENT_COMMON=("$ROOT/build/obj/native-client/client.o" "$ROOT/build/obj/native-
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-interface-check"
 "$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/vulkan_ui.cpp" \
   "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-vulkan-ui-check"
+"$COMPILER" -pthread -std=c++20 -O2 -Isrc -Inative "$ROOT/tests/skeleton_merged_bones.cpp" \
+  "${CLIENT_COMMON[@]}" -ldl -o "$ROOT/build/bin/gtc-skeleton-merged-bones-check"
+"$ROOT/build/bin/gtc-skeleton-merged-bones-check"
 if [ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ]; then
   cp "$ROOT/build/bin/gtc-native-fit" "$ROOT/prebuilt/linux-x86_64/gtc-native-fit"
   cp "$ROOT/build/bin/gtc-native-client" "$ROOT/prebuilt/linux-x86_64/gtc-native-client"
