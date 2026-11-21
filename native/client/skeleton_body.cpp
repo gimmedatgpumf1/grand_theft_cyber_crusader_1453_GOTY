@@ -416,8 +416,8 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
     }
     std::vector<bool> seen(rig.size());
     for (const auto body : sourceBodies) {
-        if (body >= rig.size() || seen[body]) {
-            error = "Source rig body map must be in range and unique"; return false;
+        if (body >= rig.size()) {
+            error = "Source rig body map must be in range"; return false;
         }
         seen[body] = true;
         const auto& m = rig.skinTransforms()[body];
@@ -428,6 +428,9 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
         if (length(m.translation) > 1e-7) {
             error = "Source rig must be attached at its bind pose"; return false;
         }
+    }
+    for (std::size_t body=0;body<rig.size();++body) if(!seen[body]) {
+        error = "Source rig body map leaves a rig node unmapped"; return false;
     }
     sourceRig_ = std::move(rig);
     sourceBodies_ = sourceBodies;
@@ -481,7 +484,8 @@ bool SkeletonModel::setReferenceBend(std::size_t link, double degrees) {
                 (other.first != parent && other.second != parent)) continue;
             const auto neighbour = other.first == parent ? other.second : other.first;
             const auto otherBody = sourceBodies_[neighbour];
-            if (sourceRig_->parent(otherBody) != sourceBodies_[parent]) continue;
+            // A merged pair already is this body; do not submit its pose twice.
+            if (otherBody == body || sourceRig_->parent(otherBody) != sourceBodies_[parent]) continue;
             const auto* otherJoint = sourceRig_->joint(otherBody);
             if (!otherJoint || otherJoint->angles().empty()) continue;
             auto otherAngles = otherJoint->angles(); otherAngles[0] = angles[0];

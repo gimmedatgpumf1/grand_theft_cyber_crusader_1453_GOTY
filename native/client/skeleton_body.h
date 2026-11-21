@@ -200,9 +200,11 @@ public:
             const auto* joint=sourceRig_->joint(child);
             if (!joint || joint->angles().size()!=3) continue;
             auto angles=joint->angles(); angles[2]=*bounded*(3.14159265358979323846/180.0);
-            updates.push_back({child,angles});
+            const auto existing=std::find_if(updates.begin(),updates.end(),[&](const auto& update){return update.body==child;});
+            if(existing==updates.end())updates.push_back({child,angles});
+            else existing->angles=angles;
         }
-        return updates.size()==2 && setSourcePose(updates);
+        return !updates.empty() && setSourcePose(updates);
     }
     bool setSourcePose(const std::vector<AnatomicalKinematicTree::PoseUpdate>& updates);
     // Drive a supplied, neutral-calibrated source joint's first coordinate in degrees.
