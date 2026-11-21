@@ -88,9 +88,13 @@ bool Renderer::fillArray(DeviceArray& array, const GpuScene& scene, bool uvs, Vk
             if (scene.batches[i].skinOwner && slots_[i]>=0) skinSlots.emplace(scene.batches[i].objectId,slots_[i]);
         for (std::size_t i=first;i<scene.batches.size();++i) if (scene.batches[i].skinObjectIds)
             for (const auto& vertex:scene.batches[i].vertices) {
-                if (!skinSlots.count(static_cast<std::uint32_t>(vertex.nx)) ||
-                    (scene.batches[i].blendedSkin && !skinSlots.count(static_cast<std::uint32_t>(vertex.ny)))) {
-                    std::fprintf(stderr,"[vk] missing skin bone slot\n");
+                const auto firstOwner=static_cast<std::uint32_t>(vertex.nx);
+                const auto secondOwner=static_cast<std::uint32_t>(vertex.ny);
+                if (!skinSlots.count(firstOwner) ||
+                    (scene.batches[i].blendedSkin && !skinSlots.count(secondOwner))) {
+                    std::fprintf(stderr,"[vk] missing skin bone slot: batch=%zu object=%u first=%u second=%u blended=%d available=%zu\n",
+                                 i,scene.batches[i].objectId,firstOwner,secondOwner,
+                                 scene.batches[i].blendedSkin?1:0,skinSlots.size());
                     return false;
                 }
             }

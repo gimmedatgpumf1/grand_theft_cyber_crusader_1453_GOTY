@@ -3,9 +3,11 @@
 #include "client/skeleton_room.h"
 #include "client/room_freecam.h"
 #include "vulkan/vk_internal.h"
+#include "vulkan/vk_renderer.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <unordered_set>
@@ -94,5 +96,16 @@ int main() {
     NativeFrame gpuFrame;room.render(gpuFrame,view,0.0,&camera);
     setGpuRenderer(nullptr);
     assert(capturedBatches>0 && gpuFrame.width==view.width && gpuFrame.height==view.height);
+    if(std::getenv("GTC_TEST_VULKAN")) {
+        if(vulkanAvailable()) {
+            setGpuRenderer(&renderVulkanScene);
+            NativeFrame deviceFrame;deviceFrame.width=view.width;deviceFrame.height=view.height;deviceFrame.wantPixels=true;
+            room.render(deviceFrame,view,0.0,&camera);
+            setGpuRenderer(nullptr);
+            assert(deviceFrame.rgb.size()>=static_cast<std::size_t>(view.width*view.height*3));
+            shutdownVulkan();
+            std::cout<<"Vulkan device V render: PASS\\n";
+        } else std::cout<<"Vulkan device V render: SKIP (no loader/device)\\n";
+    }
     std::cout<<"Merged forearm/shin rig, C-room controls, and V render paths: PASS\n";
 }
