@@ -8,7 +8,7 @@ template<class Comparison>
 void drawMakeHumanFeet(const Comparison& comparison, bool male, Rasterizer& rasterizer,
                        Vec3 origin, std::uint32_t idBase,
                        const std::vector<std::array<double,16>>* pose,
-                       const Material& flesh) {
+                       const Material& flesh,bool mergePairedLongBones=false) {
     const auto transform=[](const std::array<double,16>& m,Vec3 p) {
         return Vec3{m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12],m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13],
                     m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14]};
@@ -23,6 +23,20 @@ void drawMakeHumanFeet(const Comparison& comparison, bool male, Rasterizer& rast
             if(first>=pose->size() || second>=pose->size())continue;
             const Vec3 p=foot.points[i];const double w=foot.ownerWeights[i];
             foot.points[i]=transform((*pose)[first],p)*w+transform((*pose)[second],p)*(1-w);
+        }
+        if(mergePairedLongBones) {
+            const auto mergeOwners=[&](std::vector<int>& owners) {
+                for(int& owner:owners) {
+                    if(owner<0 || static_cast<std::size_t>(owner)>=comparison.parts().size())continue;
+                    const auto& name=comparison.parts()[static_cast<std::size_t>(owner)].name;
+                    if(name.rfind("Fibula_",0)==0) {
+                        const auto tibia=std::find_if(comparison.parts().begin(),comparison.parts().end(),
+                            [&](const auto& part){return part.name=="Tibia_"+name.substr(7);});
+                        if(tibia!=comparison.parts().end())owner=static_cast<int>(tibia-comparison.parts().begin());
+                    }
+                }
+            };
+            mergeOwners(foot.owners);mergeOwners(foot.secondaryOwners);
         }
         for(int& owner:foot.owners)owner+=static_cast<int>(idBase);
         for(int& owner:foot.secondaryOwners)owner+=static_cast<int>(idBase);

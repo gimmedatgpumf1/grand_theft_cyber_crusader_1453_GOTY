@@ -110,18 +110,21 @@ void planRuns(const GpuScene& scene, std::vector<BatchRun>& runs, std::vector<fl
         runs.push_back(run);
         index = last + 1;
     }
+    // Skin-object vertices may refer to a rigid owner batch whose material or
+    // geometry cannot join a draw run. Such owners still need matrix slots;
+    // allocate them after the optimized draw slots, independently of shading.
+    for(std::size_t batch=0;batch<scene.batches.size() && slot<kBatchSlots;++batch)
+        if(scene.batches[batch].skinOwner && slots[batch]<0)slots[batch]=static_cast<float>(slot++);
 }
 
 // This frame's matrices, at the slots their batches were given, rather than a
 // command per source structure.
 void Renderer::fillBones(const GpuScene& scene) {
     if (boneMap_ == nullptr) return;
-    for (const BatchRun& run : runs_) {
-        for (std::size_t batch = run.first; batch <= run.last; ++batch) {
-            const std::array<double, 16>& matrix = scene.batches[batch].modelMatrix;
-            float* out = boneMap_ + static_cast<std::size_t>(slots_[batch]) * 16;
-            for (int word = 0; word < 16; ++word) out[word] = static_cast<float>(matrix[word]);
-        }
+    for(std::size_t batch=0;batch<scene.batches.size();++batch)if(batch<slots_.size() && slots_[batch]>=0) {
+        const std::array<double,16>& matrix=scene.batches[batch].modelMatrix;
+        float* out=boneMap_+static_cast<std::size_t>(slots_[batch])*16;
+        for(int word=0;word<16;++word)out[word]=static_cast<float>(matrix[word]);
     }
 }
 

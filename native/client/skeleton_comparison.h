@@ -438,7 +438,7 @@ public:
                 part.name.rfind("Nav_",0)==0 || part.name.rfind("Cub_",0)==0 || part.name.find("Cun_")!=std::string::npos ||
                 part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0) rasterizer.markSkinOwner();
         }
-        drawMakeHumanFeet(*this,male_,rasterizer,origin,idBase,pose,toe);
+        drawMakeHumanFeet(*this,male_,rasterizer,origin,idBase,pose,toe,mergePairedLongBones);
     }
 private:
     static Vec3 transform(const std::array<double,16>& m, Vec3 p) {
