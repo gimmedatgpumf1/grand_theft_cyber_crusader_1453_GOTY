@@ -6,16 +6,22 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <unordered_set>
 
 using namespace gtc::native;
 
 static std::size_t capturedBatches=0;
 static bool captureScene(const GpuScene& scene,NativeFrame& frame) {
     capturedBatches=scene.batches.size();
+    std::unordered_set<std::uint32_t> skinOwners;
+    for(const auto& batch:scene.batches)if(batch.skinOwner)skinOwners.insert(batch.objectId);
     for(const auto& batch:scene.batches) {
         for(std::uint32_t i:batch.indices)if(i>=batch.vertices.size())return false;
-        for(const auto& vertex:batch.vertices)
+        for(const auto& vertex:batch.vertices) {
             if(!std::isfinite(vertex.x)||!std::isfinite(vertex.y)||!std::isfinite(vertex.z))return false;
+            if(batch.skinObjectIds && !skinOwners.count(static_cast<std::uint32_t>(vertex.nx)))return false;
+            if(batch.blendedSkin && !skinOwners.count(static_cast<std::uint32_t>(vertex.ny)))return false;
+        }
     }
     frame.width=scene.width;frame.height=scene.height;
     frame.rgb.assign(static_cast<std::size_t>(frame.width*frame.height*3),0);
