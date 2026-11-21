@@ -426,8 +426,7 @@ public:
         for (std::size_t i=0; i<parts_.size(); ++i) {
             const Part& part=parts_[i];
             if (mergePairedLongBones &&
-                (part.name.rfind("Radius_",0)==0 || part.name.rfind("Ulna_",0)==0 ||
-                 part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0)) continue;
+                (part.name.rfind("Ulna_",0)==0 || part.name.rfind("Fibula_",0)==0)) continue;
             std::vector<Vec3> points; points.reserve(part.points.size());
             for (Vec3 p:part.points) points.push_back(mapPart(p,part)+origin);
             if (!rasterizer.gpu() && pose && i<pose->size()) for (Vec3& p:points) p=transform((*pose)[i],p);
