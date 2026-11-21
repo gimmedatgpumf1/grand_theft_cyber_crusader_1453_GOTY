@@ -1,6 +1,7 @@
 // The four paired source labels must share one actual rig body without
 // preventing the C-room loader or joint controls from working.
 #include "client/skeleton_room.h"
+#include "client/room_freecam.h"
 #include "vulkan/vk_internal.h"
 #include <algorithm>
 #include <cassert>
@@ -86,10 +87,11 @@ int main() {
     }
     room.toggleLineView();
     ViewState view;view.width=640;view.height=480;
-    NativeFrame cpuFrame;room.render(cpuFrame,view,0.0);
+    RoomFreecam camera;
+    NativeFrame cpuFrame;room.render(cpuFrame,view,0.0,&camera);
     assert(cpuFrame.width==view.width && cpuFrame.height==view.height && !cpuFrame.rgb.empty());
     view.gpu=true;setGpuRenderer(&captureScene);
-    NativeFrame gpuFrame;room.render(gpuFrame,view,0.0);
+    NativeFrame gpuFrame;room.render(gpuFrame,view,0.0,&camera);
     setGpuRenderer(nullptr);
     assert(capturedBatches>0 && gpuFrame.width==view.width && gpuFrame.height==view.height);
     std::cout<<"Merged forearm/shin rig, C-room controls, and V render paths: PASS\n";
