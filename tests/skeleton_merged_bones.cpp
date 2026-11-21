@@ -1,6 +1,7 @@
 // The four paired source labels must share one actual rig body without
 // preventing the C-room loader or joint controls from working.
 #include "client/skeleton_room.h"
+#include "vulkan/vk_internal.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -13,8 +14,12 @@ using namespace gtc::native;
 static std::size_t capturedBatches=0;
 static bool captureScene(const GpuScene& scene,NativeFrame& frame) {
     capturedBatches=scene.batches.size();
+    std::vector<detail::BatchRun> runs;std::vector<float> slots;
+    detail::planRuns(scene,runs,slots);
     std::unordered_set<std::uint32_t> skinOwners;
-    for(const auto& batch:scene.batches)if(batch.skinOwner)skinOwners.insert(batch.objectId);
+    for(std::size_t i=0;i<scene.batches.size();++i)
+        if(scene.batches[i].skinOwner && i<slots.size() && slots[i]>=0)
+            skinOwners.insert(scene.batches[i].objectId);
     for(const auto& batch:scene.batches) {
         for(std::uint32_t i:batch.indices)if(i>=batch.vertices.size())return false;
         for(const auto& vertex:batch.vertices) {
