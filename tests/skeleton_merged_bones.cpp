@@ -105,8 +105,8 @@ int main() {
             const std::size_t pixels=static_cast<std::size_t>(view.width)*view.height;
             assert(deviceFrame.direct || deviceFrame.bgra.size()>=pixels*4 || deviceFrame.rgb.size()>=pixels*3);
             shutdownVulkan();
-            std::cout<<"Vulkan device V render: PASS\\n";
-        } else std::cout<<"Vulkan device V render: SKIP (no loader/device)\\n";
+            std::cout<<"Vulkan device V render: PASS\n";
+        } else std::cout<<"Vulkan device V render: SKIP (no loader/device)\n";
     }
     std::cout<<"Merged forearm/shin rig, C-room controls, and V render paths: PASS\n";
 }
