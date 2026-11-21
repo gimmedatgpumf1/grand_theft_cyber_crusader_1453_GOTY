@@ -1,6 +1,7 @@
 // The four paired source labels must share one actual rig body without
 // preventing the C-room loader or joint controls from working.
 #include "client/skeleton_room.h"
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -24,6 +25,15 @@ static void sameTransform(const SkeletonModel& model,const char* a,const char* b
         assert(std::abs(pose[static_cast<std::size_t>(ai)][k]-pose[static_cast<std::size_t>(bi)][k])<1e-12);
 }
 
+static void checkDisplayBone(const SkeletonModel& model,const SkeletonLines& lines,
+                             const char* group,const char* representative) {
+    const int source=model.sourceStructure(representative);assert(source>=0);
+    const auto solid=std::find_if(lines.solids().begin(),lines.solids().end(),
+        [&](const auto& item){return item.name==group;});
+    assert(solid!=lines.solids().end() && !solid->faces.empty() && !solid->owners.empty());
+    for(int owner:solid->owners)assert(owner==source);
+}
+
 int main() {
     SkeletonRoom room; std::string error;
     if(!room.load(".",error)) { std::cerr<<"C-room load failed: "<<error<<'\n'; return 1; }
@@ -32,6 +42,14 @@ int main() {
         assert(model->sourceRig()->size()==179);
         checkPair(*model,"Radius_L","Ulna_L");checkPair(*model,"Radius_R","Ulna_R");
         checkPair(*model,"Tibia_L","Fibula_L");checkPair(*model,"Tibia_R","Fibula_R");
+        SkeletonLines lines;
+        const char* side=model==&room.male()?"male":"female";
+        assert(lines.load(std::string("tools/skeleton-source/skeleton-")+side+".lines",error));
+        assert(lines.bind(*model,error));
+        checkDisplayBone(*model,lines,"Forearm_L","Radius_L");
+        checkDisplayBone(*model,lines,"Forearm_R","Radius_R");
+        checkDisplayBone(*model,lines,"Shin_L","Tibia_L");
+        checkDisplayBone(*model,lines,"Shin_R","Tibia_R");
         sameTransform(*model,"Radius_L","Ulna_L");sameTransform(*model,"Radius_R","Ulna_R");
         sameTransform(*model,"Tibia_L","Fibula_L");sameTransform(*model,"Tibia_R","Fibula_R");
     }
