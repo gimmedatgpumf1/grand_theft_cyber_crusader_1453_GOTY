@@ -1,6 +1,7 @@
 // The four paired source labels must share one actual rig body without
 // preventing the C-room loader or joint controls from working.
 #include "client/skeleton_room.h"
+#include "client/skeleton_joint_limits_view.h"
 #include "client/room_freecam.h"
 #include "vulkan/vk_internal.h"
 #include "vulkan/vk_renderer.h"
@@ -52,6 +53,26 @@ static void sameTransform(const SkeletonModel& model,const char* a,const char* b
         assert(std::abs(pose[static_cast<std::size_t>(ai)][k]-pose[static_cast<std::size_t>(bi)][k])<1e-12);
 }
 
+static void checkElbowMotionAxes(const SkeletonModel& model,const char* suffix) {
+    const int radius=model.sourceStructure(std::string("Radius_")+suffix);
+    const int ulna=model.sourceStructure(std::string("Ulna_")+suffix);
+    assert(radius>=0 && ulna>=0);
+    const auto& mapping=model.sourceBodyMap();const auto* rig=model.sourceRig();
+    assert(mapping[static_cast<std::size_t>(radius)]==mapping[static_cast<std::size_t>(ulna)]);
+    const auto* elbow=rig->joint(mapping[static_cast<std::size_t>(radius)]);
+    assert(elbow && elbow->axes().size()>=2);
+    assert(elbow->axes()[0].role==JointAxisRole::Motion);
+    assert(elbow->axes()[1].role==JointAxisRole::Alignment);
+    const double radians=3.14159265358979323846/180.0;
+    assert(std::abs(elbow->axes()[0].minimum)<1e-12);
+    assert(std::abs(elbow->axes()[0].maximum-150*radians)<1e-12);
+    const auto coupled=std::find_if(elbow->axes().begin(),elbow->axes().end(),
+        [](const auto& axis){return axis.role==JointAxisRole::Coupled;});
+    assert(coupled!=elbow->axes().end());
+    assert(!joint_view::mergedSecondary(model.sourceStructures()[static_cast<std::size_t>(radius)].name));
+    assert(joint_view::mergedSecondary(model.sourceStructures()[static_cast<std::size_t>(ulna)].name));
+}
+
 static void checkKneeMotionAxes(const SkeletonModel& model,const char* suffix) {
     const int tibia=model.sourceStructure(std::string("Tibia_")+suffix);
     const int fibula=model.sourceStructure(std::string("Fibula_")+suffix);
@@ -88,6 +109,7 @@ int main() {
         checkPair(*model,"Radius_L","Ulna_L");checkPair(*model,"Radius_R","Ulna_R");
         checkPair(*model,"Tibia_L","Fibula_L");checkPair(*model,"Tibia_R","Fibula_R");
         checkKneeMotionAxes(*model,"L");checkKneeMotionAxes(*model,"R");
+        checkElbowMotionAxes(*model,"L");checkElbowMotionAxes(*model,"R");
         SkeletonLines lines;
         const char* side=model==&room.male()?"male":"female";
         assert(lines.load(std::string("tools/skeleton-source/skeleton-")+side+".lines",error));

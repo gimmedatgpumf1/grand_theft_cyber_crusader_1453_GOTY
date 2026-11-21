@@ -14,6 +14,9 @@ namespace gtc::native {
 // rotational coordinate's actual minimum and maximum. The pale needle follows
 // the child. This is a visualization of the existing rig, never a pose edit.
 namespace joint_view {
+inline bool mergedSecondary(std::string_view name) {
+    return name=="Ulna_L" || name=="Ulna_R" || name=="Fibula_L" || name=="Fibula_R";
+}
 struct Mesh {
     std::vector<Vec3> vertices;
     std::vector<std::array<int,3>> faces;
@@ -50,7 +53,10 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
     std::vector<int> structure(rig->size(),-1);
     std::vector<Vec3> rawCenter(parts.size()),blueCenter(parts.size());
     for(std::size_t i=0;i<parts.size();++i) {
-        if(mapping[i]>=structure.size() || !parts[i].pointCount)continue;
+        if(mapping[i]>=structure.size() || !parts[i].pointCount || mergedSecondary(parts[i].name))continue;
+        // Merged Radius/Ulna and Tibia/Fibula labels resolve to one rig body.
+        // Keep the visible representative, never the later secondary alias.
+        if(structure[mapping[i]]>=0)continue;
         structure[mapping[i]]=int(i);const auto& part=parts[i];const auto& raw=model.bones()[part.group].points;
         Vec3 center{};for(std::size_t k=0;k<part.pointCount;++k)center+=raw[part.firstPoint+k];
         rawCenter[i]=point(pose[i],center/double(part.pointCount));
@@ -79,7 +85,7 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         // Ulna+Radius = one forearm; Fibula+Tibia = one shin. Skip the
         // secondary bone so each pair shows a single joint.
         const auto& childName=parts[ci].name;
-        if(childName=="Ulna_L"||childName=="Ulna_R"||childName=="Fibula_L"||childName=="Fibula_R")continue;
+        if(mergedSecondary(childName))continue;
         const auto frame=joint_detail::compose(absolute[*parent],joint->parentFrame());
         Vec3 center=anchor(pi,frame.translation);
         if(blue)center=(center+anchor(ci,frame.translation))*.5;

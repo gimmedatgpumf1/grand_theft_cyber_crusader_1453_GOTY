@@ -301,7 +301,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     axes.push_back({alignmentAxis,0,3.14159265358979323846,JointAxisRole::Alignment}); bindAngles.push_back(0);
                 }
                 if (length(toeYawAxis)>1e-8) { axes.push_back({toeYawAxis,-1.57079632679,1.57079632679}); bindAngles.push_back(0); }
-                if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({forearmAxis*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
+                if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({forearmAxis*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians,JointAxisRole::Coupled}); bindAngles.push_back(0); }
                 if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
                     // Internal/external rotation around the femoral shaft.
                     const Vec3 shaft=frameVector(joint_detail::rotate({0,0,1},-*pelvisAngle),{0,side==0 ? -1.0 : 1.0,0});
