@@ -70,8 +70,10 @@ void drawComparisonPairedLongBones(Rasterizer& rasterizer,const SkeletonLines& l
         std::vector<std::array<int,3>> faces;faces.reserve(solid.faces.size()*2+solid.edges.size()*2);
         for(const auto& f:solid.faces){faces.push_back({f[0],f[2],f[1]});faces.push_back({count+f[0],count+f[1],count+f[2]});}
         for(const auto& e:solid.edges){faces.push_back({e[0],e[1],count+e[0]});faces.push_back({e[1],count+e[1],count+e[0]});}
+        // This merged comparison surface is already transformed into its final
+        // pose; it is static geometry, not a skinned source-structure owner.
         rasterizer.setObject(idBase+static_cast<std::uint32_t>(index),{},0);
-        rasterizer.markSkinOwner();rasterizer.mesh(vertices,faces,material);
+        rasterizer.mesh(vertices,faces,material);
     }
 }
 
