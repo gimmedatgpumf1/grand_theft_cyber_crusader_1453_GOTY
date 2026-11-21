@@ -1,3 +1,29 @@
 vk: opening the loader
-vk: no loader
-vk: available=0
+vk: creating the instance
+vk: instance created
+vk: choosing a device
+vk: colour format B8G8R8A8_SRGB, no-swap readback
+vk: device created
+vk: ready
+vk: frame 0 begin 32x24
+vk: frame 0 targets 32x24
+vk: readback memory host cached
+vk: readback memory host cached
+vk: frame 0 targets ready
+vk: frame 0 recorded
+vk: frame 0 submitting
+vk: frame 0 presented
+vk: frame 1 begin 32x24
+vk: frame 1 recorded
+vk: frame 1 submitting
+vk: frame 1 presented
+vk: self test passed
+vk: available=1
+vk: frame 2 begin 640x480
+vk: frame 2 targets 640x480
+vk: readback memory host cached
+vk: readback memory host cached
+vk: frame 2 targets ready
+vk: frame 2 recorded
+vk: frame 2 submitting
+vk: frame 2 presented
