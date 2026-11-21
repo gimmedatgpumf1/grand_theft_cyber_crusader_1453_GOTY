@@ -40,6 +40,42 @@ double minimumY(const SkeletonModel& model) {
     return result;
 }
 
+void drawComparisonPairedLongBones(Rasterizer& rasterizer,const SkeletonLines& lines,
+    const SkeletonModel& model,const SkeletonComparison& comparison,
+    const std::vector<std::array<double,16>>& pose,Vec3 origin,std::uint32_t idBase) {
+    const auto& structures=model.sourceStructures();
+    const auto& parts=comparison.parts();
+    if(pose.size()!=parts.size())return;
+    Material material;material.color=colorHex("#358fff");material.specular=0.12;
+    for(const auto& solid:lines.solids()) {
+        if(solid.name.rfind("Forearm_",0)!=0 && solid.name.rfind("Shin_",0)!=0)continue;
+        const std::string representative=(solid.name.rfind("Forearm_",0)==0 ? "Radius_" : "Tibia_")+solid.name.substr(solid.name.find('_')+1);
+        const int sourceIndex=model.sourceStructure(representative);
+        if(sourceIndex<0 || static_cast<std::size_t>(sourceIndex)>=pose.size())continue;
+        const auto part=std::find_if(parts.begin(),parts.end(),[&](const auto& candidate){return candidate.name==representative;});
+        if(part==parts.end())continue;
+        const std::size_t index=static_cast<std::size_t>(sourceIndex);
+        const auto map=[&](Vec3 p){return transformed(pose[index],comparison.mapPart(p,*part)+origin);};
+        std::vector<Vec3> surface;surface.reserve(solid.points.size());
+        for(Vec3 p:solid.points)surface.push_back(map(p));
+        Vec3 normal{};double largest=0;
+        for(const auto& face:solid.faces) {
+            const Vec3 n=cross(surface[face[1]]-surface[face[0]],surface[face[2]]-surface[face[0]]);
+            if(dot(n,n)>largest){largest=dot(n,n);normal=normalized(n);}
+        }
+        if(largest<1e-18)continue;
+        const int count=static_cast<int>(surface.size());
+        std::vector<Vec3> vertices;vertices.reserve(surface.size()*2);
+        for(Vec3 p:surface)vertices.push_back(p-normal*(solid.thickness*.5));
+        for(Vec3 p:surface)vertices.push_back(p+normal*(solid.thickness*.5));
+        std::vector<std::array<int,3>> faces;faces.reserve(solid.faces.size()*2+solid.edges.size()*2);
+        for(const auto& f:solid.faces){faces.push_back({f[0],f[2],f[1]});faces.push_back({count+f[0],count+f[1],count+f[2]});}
+        for(const auto& e:solid.edges){faces.push_back({e[0],e[1],count+e[0]});faces.push_back({e[1],count+e[1],count+e[0]});}
+        rasterizer.setObject(idBase+static_cast<std::uint32_t>(index),{},0);
+        rasterizer.markSkinOwner();rasterizer.mesh(vertices,faces,material);
+    }
+}
+
 void drawFloor(Rasterizer& rasterizer, const Camera& camera) {
     Material dark;
     dark.color = colorHex("#26332c");
@@ -429,8 +465,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
                 std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
                 const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0},&maleJoints);
                 const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
-                maleComparison_.draw(raster,-2.85,12000,&maleToePose,false);
-                femaleComparison_.draw(raster,2.85,14000,&femaleToePose,false);
+                maleComparison_.draw(raster,-2.85,12000,&maleToePose,false,true);
+                femaleComparison_.draw(raster,2.85,14000,&femaleToePose,false,true);
+                drawComparisonPairedLongBones(raster,maleLines_,male_,maleComparison_,maleToePose,{-2.85,0.10,0},12000);
+                drawComparisonPairedLongBones(raster,femaleLines_,female_,femaleComparison_,femaleToePose,{2.85,0.10,0},14000);
                 const auto maleWhite=whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0});
                 const auto femaleWhite=whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0});
                 joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001,nullptr,nullptr,&maleWhite);
@@ -460,8 +498,10 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
         std::vector<ComparisonToeAttachment> maleJoints,femaleJoints;
         const auto maleToePose=comparisonToePose(true,{-2.85,0.10,0},&maleJoints);
         const auto femaleToePose=comparisonToePose(false,{2.85,0.10,0},&femaleJoints);
-        maleComparison_.draw(raster,-2.85,12000,&maleToePose);
-        femaleComparison_.draw(raster,2.85,14000,&femaleToePose);
+        maleComparison_.draw(raster,-2.85,12000,&maleToePose,false,true);
+        femaleComparison_.draw(raster,2.85,14000,&femaleToePose,false,true);
+        drawComparisonPairedLongBones(raster,maleLines_,male_,maleComparison_,maleToePose,{-2.85,0.10,0},12000);
+        drawComparisonPairedLongBones(raster,femaleLines_,female_,femaleComparison_,femaleToePose,{2.85,0.10,0},14000);
         const auto maleWhite=whiteToeSurfaceAnchors(male_,maleToeMarks_,{-0.95,maleFloor_,0});
         const auto femaleWhite=whiteToeSurfaceAnchors(female_,femaleToeMarks_,{0.95,femaleFloor_,0});
         joint_view::draw(raster,male_, {-0.95,maleFloor_,0},9001,nullptr,nullptr,&maleWhite);

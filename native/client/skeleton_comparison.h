@@ -418,12 +418,17 @@ public:
         return skin;
     }
     void draw(Rasterizer& rasterizer, double x, std::uint32_t idBase=12000,
-              const std::vector<std::array<double,16>>* pose=nullptr, bool jointViewOwners=false) const {
+              const std::vector<std::array<double,16>>* pose=nullptr, bool jointViewOwners=false,
+              bool mergePairedLongBones=false) const {
         Material blue; blue.color=colorHex("#358fff"); blue.specular=0.12;
         Material toe; toe.color=colorHex("#e9bd9f"); toe.specular=0.12; toe.opacity=0.5;
         const Vec3 origin{x,0.10,0};
         for (std::size_t i=0; i<parts_.size(); ++i) {
-            const Part& part=parts_[i]; std::vector<Vec3> points; points.reserve(part.points.size());
+            const Part& part=parts_[i];
+            if (mergePairedLongBones &&
+                (part.name.rfind("Radius_",0)==0 || part.name.rfind("Ulna_",0)==0 ||
+                 part.name.rfind("Tibia_",0)==0 || part.name.rfind("Fibula_",0)==0)) continue;
+            std::vector<Vec3> points; points.reserve(part.points.size());
             for (Vec3 p:part.points) points.push_back(mapPart(p,part)+origin);
             if (!rasterizer.gpu() && pose && i<pose->size()) for (Vec3& p:points) p=transform((*pose)[i],p);
             rasterizer.setObject(idBase+static_cast<std::uint32_t>(i),{},0);

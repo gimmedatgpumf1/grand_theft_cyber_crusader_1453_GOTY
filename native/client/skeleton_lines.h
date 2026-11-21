@@ -29,6 +29,8 @@ public:
         std::vector<int> owners;
     };
 
+    const std::vector<Solid>& solids() const { return solids_; }
+
     std::optional<Vec3> sourceBoneDirection(const std::string& name) const {
         for (const auto& segment:segments_) if (segment.kind=='B' && segment.first==name) {
             const Vec3 direction=segment.b-segment.a;
@@ -179,6 +181,13 @@ public:
     // only selects among members of an already declared group, never links bones.
     bool bind(const SkeletonModel& body, std::string& error) {
         auto owner = [&](const std::string& name, Vec3 p) -> int {
+            // The V-view forearm and shin are each one rigid display bone.
+            // Keep all vertices and endpoints on a single representative rig
+            // transform; the source rig itself still retains its named joints.
+            if (name.rfind("Forearm_",0)==0)
+                return body.sourceStructure("Radius_"+name.substr(8));
+            if (name.rfind("Shin_",0)==0)
+                return body.sourceStructure("Tibia_"+name.substr(5));
             std::vector<std::string> choices;
             const auto group = groups_.find(name);
             if (group == groups_.end()) choices.push_back(name);
