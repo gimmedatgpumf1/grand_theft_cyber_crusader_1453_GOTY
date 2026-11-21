@@ -9,6 +9,19 @@
 
 using namespace gtc::native;
 
+static std::size_t capturedBatches=0;
+static bool captureScene(const GpuScene& scene,NativeFrame& frame) {
+    capturedBatches=scene.batches.size();
+    for(const auto& batch:scene.batches) {
+        for(std::uint32_t i:batch.indices)if(i>=batch.vertices.size())return false;
+        for(const auto& vertex:batch.vertices)
+            if(!std::isfinite(vertex.x)||!std::isfinite(vertex.y)||!std::isfinite(vertex.z))return false;
+    }
+    frame.width=scene.width;frame.height=scene.height;
+    frame.rgb.assign(static_cast<std::size_t>(frame.width*frame.height*3),0);
+    return true;
+}
+
 static void checkPair(SkeletonModel& model,const char* primary,const char* alias) {
     const int a=model.sourceStructure(primary),b=model.sourceStructure(alias);
     assert(a>=0 && b>=0);
@@ -60,5 +73,13 @@ int main() {
         sameTransform(*model,"Radius_L","Ulna_L");sameTransform(*model,"Radius_R","Ulna_R");
         sameTransform(*model,"Tibia_L","Fibula_L");sameTransform(*model,"Tibia_R","Fibula_R");
     }
-    std::cout<<"Merged forearm/shin rig bodies and C-room controls: PASS\n";
+    room.toggleLineView();
+    ViewState view;view.width=640;view.height=480;
+    NativeFrame cpuFrame;room.render(cpuFrame,view,0.0);
+    assert(cpuFrame.width==view.width && cpuFrame.height==view.height && !cpuFrame.rgb.empty());
+    view.gpu=true;setGpuRenderer(&captureScene);
+    NativeFrame gpuFrame;room.render(gpuFrame,view,0.0);
+    setGpuRenderer(nullptr);
+    assert(capturedBatches>0 && gpuFrame.width==view.width && gpuFrame.height==view.height);
+    std::cout<<"Merged forearm/shin rig, C-room controls, and V render paths: PASS\n";
 }
