@@ -416,8 +416,8 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
     }
     std::vector<bool> seen(rig.size());
     for (const auto body : sourceBodies) {
-        if (body >= rig.size() || seen[body]) {
-            error = "Source rig body map must be in range and unique"; return false;
+        if (body >= rig.size()) {
+            error = "Source rig body map must be in range"; return false;
         }
         seen[body] = true;
         const auto& m = rig.skinTransforms()[body];
@@ -427,6 +427,11 @@ bool SkeletonModel::setSourceRig(AnatomicalKinematicTree rig,
         }
         if (length(m.translation) > 1e-7) {
             error = "Source rig must be attached at its bind pose"; return false;
+        }
+    }
+    for (std::size_t body = 1; body < rig.size(); ++body) {
+        if (!seen[body]) {
+            error = "Source rig body map leaves a rig node unmapped"; return false;
         }
     }
     sourceRig_ = std::move(rig);
