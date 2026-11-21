@@ -105,7 +105,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                 const Vec3 axis=kneeAxes_[side].medialDirection * (side==0 ? -1.0 : 1.0);
                 JointRigidTransform frame; frame.translation=kneeAxes_[side].origin;
                 auto joint=CalibratedRotationalJoint::create(frame,frame,
-                    {{axis,-0.7*135*toRadians,0.7*135*toRadians}});
+                    {{axis,-0.7*135*toRadians,0.7*135*toRadians,JointAxisRole::Coupled}});
                 if (!joint) { error="Invalid patellar joint " + childName; return false; }
                 body=rig.addJoint(mapping[parent],*joint); coupledPatella=true;
             } else if (bounds) {
@@ -297,7 +297,9 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     const Vec3 axial=link.mobility=="sternoclavicular" ? shoulders[side]->clavicleAxis : Vec3{sign,0,0};
                     axes.push_back({axial,-30*toRadians,30*toRadians}); bindAngles.push_back(0);
                 }
-                if (alignToNeutral && link.mobility!="hip_ball_socket") { axes.push_back({alignmentAxis,0,3.14159265358979323846}); bindAngles.push_back(0); }
+                if (alignToNeutral && link.mobility!="hip_ball_socket") {
+                    axes.push_back({alignmentAxis,0,3.14159265358979323846,JointAxisRole::Alignment}); bindAngles.push_back(0);
+                }
                 if (length(toeYawAxis)>1e-8) { axes.push_back({toeYawAxis,-1.57079632679,1.57079632679}); bindAngles.push_back(0); }
                 if (link.mobility=="elbow_hinge" && alignToNeutral) { const auto r=*referenceBendRange("radioulnar_pivot"); axes.push_back({forearmAxis*(side==0 ? 1.0 : -1.0),r.extension*toRadians,r.flexion*toRadians}); bindAngles.push_back(0); }
                 if (link.mobility == "hip_ball_socket" && hasKneeAxes_) {
@@ -306,7 +308,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
                     const auto rotation=*referenceBendRange("hip_rotation"), abduction=*referenceBendRange("hip_abduction");
                     axes.push_back({shaft,rotation.extension*toRadians,rotation.flexion*toRadians}); bindAngles.push_back(0);
                     axes.push_back({{0,0,side==0 ? 1.0 : -1.0},abduction.extension*toRadians,abduction.flexion*toRadians}); bindAngles.push_back(0);
-                    axes.push_back({alignmentAxis,0,3.14159265358979323846}); bindAngles.push_back(0);
+                    axes.push_back({alignmentAxis,0,3.14159265358979323846,JointAxisRole::Alignment}); bindAngles.push_back(0);
                 }
                 if (link.mobility == "shoulder_ball_socket") {
                     const auto abduction=*referenceBendRange("shoulder_abduction");

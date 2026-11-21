@@ -102,7 +102,9 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         const auto& angles=joint->angles();
         for(std::size_t ax=0;ax<axes.size();++ax) {
             const auto& range=axes[ax];
-            if(!std::isfinite(range.minimum)||!std::isfinite(range.maximum))continue;
+            // Registration axes and passive coupled motion are not independent
+            // bending limits; only show calibrated anatomical DOFs in V.
+            if(range.role!=JointAxisRole::Motion || !std::isfinite(range.minimum) || !std::isfinite(range.maximum))continue;
             const Vec3 sourceAxis=normalized(frameVector(frame,range.direction));
             Vec3 axis=anchor(pi,frame.translation+sourceAxis*.01)-anchor(pi,frame.translation);
             if(toeBend && ax==0)axis=toeBend->axis;
@@ -129,7 +131,8 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
             for(double end:{minimum,maximum}) {
                 const Vec3 d=radial(end);arcs.stroke(center+d*(radius*.78),center+d*(radius*1.14),axis,width*1.2,owner);
             }
-            if(axes.size()==1 || toeBend)
+            const auto motionAxes=std::count_if(axes.begin(),axes.end(),[](const auto& item){return item.role==JointAxisRole::Motion;});
+            if(motionAxes==1 || toeBend)
                 needles.stroke(center+current*(radius*.18),center+current*(radius*.91),axis,width*.8,childOwner);
         }
     }

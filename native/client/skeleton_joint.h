@@ -19,9 +19,12 @@ struct JointRigidTransform {
     Vec3 translation{};
 };
 
+enum class JointAxisRole { Motion, Alignment, Coupled };
+
 struct JointRotationalAxis {
     Vec3 direction; // expressed in the joint frame; normalised by Joint::create
     double minimum = 0, maximum = 0; // radians in the calibrated reference frame
+    JointAxisRole role = JointAxisRole::Motion;
 };
 
 namespace joint_detail {

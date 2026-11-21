@@ -52,6 +52,24 @@ static void sameTransform(const SkeletonModel& model,const char* a,const char* b
         assert(std::abs(pose[static_cast<std::size_t>(ai)][k]-pose[static_cast<std::size_t>(bi)][k])<1e-12);
 }
 
+static void checkKneeMotionAxes(const SkeletonModel& model,const char* suffix) {
+    const int tibia=model.sourceStructure(std::string("Tibia_")+suffix);
+    const int fibula=model.sourceStructure(std::string("Fibula_")+suffix);
+    const int patella=model.sourceStructure(std::string("Patella_")+suffix);
+    assert(tibia>=0 && fibula>=0 && patella>=0);
+    const auto* rig=model.sourceRig();const auto& mapping=model.sourceBodyMap();
+    const auto* knee=rig->joint(mapping[static_cast<std::size_t>(tibia)]);
+    assert(knee && knee->axes().size()==2);
+    assert(knee->axes()[0].role==JointAxisRole::Motion);
+    assert(knee->axes()[1].role==JointAxisRole::Alignment);
+    const double radians=3.14159265358979323846/180.0;
+    assert(std::abs(knee->axes()[0].minimum)<1e-12);
+    assert(std::abs(knee->axes()[0].maximum-135*radians)<1e-12);
+    const auto* patellaJoint=rig->joint(mapping[static_cast<std::size_t>(patella)]);
+    assert(patellaJoint && patellaJoint->axes().size()==1);
+    assert(patellaJoint->axes()[0].role==JointAxisRole::Coupled);
+}
+
 static void checkDisplayBone(const SkeletonModel& model,const SkeletonLines& lines,
                              const char* group,const char* representative) {
     const int source=model.sourceStructure(representative);assert(source>=0);
@@ -69,6 +87,7 @@ int main() {
         assert(model->sourceRig()->size()==179);
         checkPair(*model,"Radius_L","Ulna_L");checkPair(*model,"Radius_R","Ulna_R");
         checkPair(*model,"Tibia_L","Fibula_L");checkPair(*model,"Tibia_R","Fibula_R");
+        checkKneeMotionAxes(*model,"L");checkKneeMotionAxes(*model,"R");
         SkeletonLines lines;
         const char* side=model==&room.male()?"male":"female";
         assert(lines.load(std::string("tools/skeleton-source/skeleton-")+side+".lines",error));
