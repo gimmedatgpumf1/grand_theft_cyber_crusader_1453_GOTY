@@ -76,6 +76,10 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         const auto parent=rig->parent(node);const auto* joint=rig->joint(node);
         if(!parent || !*parent || !joint || joint->axes().empty() || structure[node]<0 || structure[*parent]<0)continue;
         const std::size_t pi=std::size_t(structure[*parent]),ci=std::size_t(structure[node]);
+        // Ulna+Radius = one forearm; Fibula+Tibia = one shin. Skip the
+        // secondary bone so each pair shows a single joint.
+        const auto& childName=parts[ci].name;
+        if(childName=="Ulna_L"||childName=="Ulna_R"||childName=="Fibula_L"||childName=="Fibula_R")continue;
         const auto frame=joint_detail::compose(absolute[*parent],joint->parentFrame());
         Vec3 center=anchor(pi,frame.translation);
         if(blue)center=(center+anchor(ci,frame.translation))*.5;
