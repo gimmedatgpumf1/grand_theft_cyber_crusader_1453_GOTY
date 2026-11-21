@@ -28,17 +28,6 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     const std::size_t count = sourceStructures_.size();
     const std::size_t missing = static_cast<std::size_t>(-1); std::vector<std::size_t> mapping(count, missing), queue;
     std::vector<bool> visited(count); FingerReferenceFrames fingerFrames(count);
-    // Ulna+Radius = one forearm; Fibula+Tibia = one shin.
-    std::vector<std::size_t> canon(count);
-    for (std::size_t i = 0; i < count; ++i) canon[i] = i;
-    const auto mergePair = [&](const char* a, const char* b) {
-        const int ia = sourceStructure(a), ib = sourceStructure(b);
-        if (ia >= 0 && ib >= 0) canon[static_cast<std::size_t>(ia)] = static_cast<std::size_t>(ib);
-    };
-    mergePair("Ulna_L", "Radius_L"); mergePair("Ulna_R", "Radius_R");
-    mergePair("Fibula_L", "Tibia_L"); mergePair("Fibula_R", "Tibia_R");
-    std::size_t canonCount = 0;
-    for (std::size_t i = 0; i < count; ++i) if (canon[i] == i) ++canonCount;
     std::vector<double> neutralAlignments(count+1,-1.0);
     AnatomicalKinematicTree rig;
     std::vector<AnatomicalKinematicTree::PoseUpdate> bindPose;
@@ -81,11 +70,8 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
     for (std::size_t head=0; head<queue.size(); ++head) {
         const auto parent = queue[head];
         for (const auto& link : sourceLinks_) {
-            const bool firstIsParent = canon[link.first] == parent;
-            const bool secondIsParent = canon[link.second] == parent;
-            if (!firstIsParent && !secondIsParent) continue;
-            if (firstIsParent && secondIsParent) continue;
-            const auto child = canon[firstIsParent ? link.second : link.first];
+            if (link.first != parent && link.second != parent) continue;
+            const auto child = link.first == parent ? link.second : link.first;
             if (visited[child]) continue;
             fingerFrames.inherit(parent,child);
             const auto& parentName = sourceStructures_[parent].name;
@@ -332,14 +318,7 @@ bool SkeletonModel::installReferenceRig(std::string& error) {
             mapping[child] = *body; visited[child] = true; queue.push_back(child);
         }
     }
-    if (queue.size() != canonCount) { error = "Anatomical source graph is disconnected"; return false; }
-    // Every source geometry in a merged pair follows the same rig body.
-    for (std::size_t i = 0; i < count; ++i) {
-        if (canon[i] != i) {
-            if (mapping[canon[i]] == missing) { error = "Merged source bone has no rig body"; return false; }
-            mapping[i] = mapping[canon[i]];
-        }
-    }
+    if (queue.size() != count) { error = "Anatomical source graph is disconnected"; return false; }
     rig.captureBindPose();
     if (!setSourceRig(std::move(rig),mapping,error)) return false;
     referenceBindPose_ = std::move(bindPose);

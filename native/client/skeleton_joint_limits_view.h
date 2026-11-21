@@ -51,10 +51,6 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
     std::vector<Vec3> rawCenter(parts.size()),blueCenter(parts.size());
     for(std::size_t i=0;i<parts.size();++i) {
         if(mapping[i]>=structure.size() || !parts[i].pointCount)continue;
-        const auto& name=parts[i].name;
-        // The merged rig node is represented by Radius/Tibia; retain the
-        // representative when both source structures map to the same node.
-        if(name=="Ulna_L"||name=="Ulna_R"||name=="Fibula_L"||name=="Fibula_R")continue;
         structure[mapping[i]]=int(i);const auto& part=parts[i];const auto& raw=model.bones()[part.group].points;
         Vec3 center{};for(std::size_t k=0;k<part.pointCount;++k)center+=raw[part.firstPoint+k];
         rawCenter[i]=point(pose[i],center/double(part.pointCount));
@@ -80,6 +76,10 @@ inline void draw(Rasterizer& out,const SkeletonModel& model,Vec3 origin,std::uin
         const auto parent=rig->parent(node);const auto* joint=rig->joint(node);
         if(!parent || !*parent || !joint || joint->axes().empty() || structure[node]<0 || structure[*parent]<0)continue;
         const std::size_t pi=std::size_t(structure[*parent]),ci=std::size_t(structure[node]);
+        // Ulna+Radius = one forearm; Fibula+Tibia = one shin. Skip the
+        // secondary bone so each pair shows a single joint.
+        const auto& childName=parts[ci].name;
+        if(childName=="Ulna_L"||childName=="Ulna_R"||childName=="Fibula_L"||childName=="Fibula_R")continue;
         const auto frame=joint_detail::compose(absolute[*parent],joint->parentFrame());
         Vec3 center=anchor(pi,frame.translation);
         if(blue)center=(center+anchor(ci,frame.translation))*.5;
