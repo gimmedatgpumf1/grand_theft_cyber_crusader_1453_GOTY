@@ -10,6 +10,7 @@
 #include "client/ui_layer.h"
 
 #include <thread>
+#include <iostream>
 
 #include <algorithm>
 #include <cmath>
@@ -413,6 +414,14 @@ void SkeletonRoom::render(NativeFrame& frame, const ViewState& view, double seco
             frame.interfaceInFrame=true;
         }
         const bool ok=renderGpuScene(scene,frame);
+        if(!ok) {
+            std::size_t vertices=0,indices=0;
+            for(std::size_t i=0;i<worldCount;++i) {
+                vertices+=scene.batches[i].vertices.size();indices+=scene.batches[i].indices.size();
+            }
+            std::cerr<<"[skeleton] GPU room render failed: lineView="<<lineView_
+                     <<" batches="<<worldCount<<" vertices="<<vertices<<" indices="<<indices<<'\n';
+        }
         scene.batches.resize(worldCount);
         if (!ok) frame.rgb.clear();
     };
