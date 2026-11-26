@@ -245,7 +245,7 @@ All values below are in metres. The JSON files hold more digits.
 | Source hip width X | 0.273490 | 0.295275 |
 | Source shoulder width X | 0.379641 | 0.359937 |
 
-| Target | Male asked | Male fitted | Female asked | Female fitted |
+| Measure | Male formula says | Male OBJ fit | Female formula says | Female OBJ fit |
 |---|---:|---:|---:|---:|
 | Head | 0.218394 | 0.218394 | 0.208859 | 0.208859 |
 | Neck | 0.107371 | 0.107371 | 0.105784 | 0.105784 |
@@ -255,7 +255,9 @@ All values below are in metres. The JSON files hold more digits.
 | Hip width | 0.279188 | 0.279188 | 0.277555 | 0.277555 |
 | Shoulder width | 0.403648 | 0.403648 | 0.359276 | 0.359276 |
 
-Torso and leg asked values do not match the fitted values. The pelvis ring
-stays together, so the fit changes those two results. Use the `fitted` numbers
-when you mean the size in these OBJ files. Do not say every asked target was
-hit exactly.
+Torso and leg are different. The formula says one size; the OBJ fit gets a
+smaller size. Why? The fit keeps the pelvis ring one piece. It cannot bend the
+ring to hit both formula sizes. Head, neck, arm, hip, and shoulder match.
+
+Read `requested` as “formula says.” Read `fitted` as “OBJ fit gets.” Use the
+`fitted` values when you describe these OBJ files.
