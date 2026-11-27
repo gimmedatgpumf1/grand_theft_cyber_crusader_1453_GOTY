@@ -1,16 +1,23 @@
 # Blue bones. Fit the body.
 
-## Try the modular body
+## View and fit the actual skeleton in HTML
 
-Open `modular_body.html` in a browser. Pick male/female. Move the height
-slider. Drag the model to turn it. The body is separate blocks: head, neck,
-torso, pelvis, shoulders, upper arms, forearms, hands, thighs, shins, and feet.
-Each block changes from the formula targets. No extra libraries needed.
+Open `skeleton_fit.html` through a local web server. The page reads the real
+`standard_blue_male.obj` or `standard_blue_female.obj` mesh and its matching
+JSON metadata from this folder. For example, from the repository root, run
+`python3 -m http.server 8000`, then visit
+`http://localhost:8000/export/skeleton_fit.html`. The preview renders the
+original bone meshes—not a block model. Choose sex and height (0.50–2.50 m),
+and drag to rotate. Each body region follows its own formula fit, not one
+whole-body scale. The pelvis ring stays intact, so fitted torso and leg sizes
+can differ slightly from their targets.
 
-Click the three buttons to save OBJ, MTL, and JSON. Keep OBJ and MTL together.
-The JSON gives each block's bounds and joint points. This block model is
-simple on purpose. Block widths/depths and limb split ratios are display
-choices; the seven body targets come from the formulas below.
+Download the fitted OBJ and JSON from the page. The OBJ retains the bone
+objects and triangles; keep `standard_blue.mtl` beside it in an OBJ viewer.
+The JSON records height, mesh bounds, formula and fitted measurements, fit
+parameters, and landmarks. At either source model's default height, the HTML
+preview uses the existing OBJ vertices directly. Units are **m**; axes are
+**X right, Y up, Z forward**.
 
 ## Open the ready-made model
 
