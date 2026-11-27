@@ -12,12 +12,24 @@ and drag to rotate. Each body region follows its own formula fit, not one
 whole-body scale. The pelvis ring stays intact, so fitted torso and leg sizes
 can differ slightly from their targets.
 
-Download the fitted OBJ and JSON from the page. The OBJ retains the bone
-objects and triangles; keep `standard_blue.mtl` beside it in an OBJ viewer.
-The JSON records height, mesh bounds, formula and fitted measurements, fit
-parameters, and landmarks. At either source model's default height, the HTML
-preview uses the existing OBJ vertices directly. Units are **m**; axes are
-**X right, Y up, Z forward**.
+Spawn up to four bodies to compare them side by side. Adjust each selected
+body's height, sex, world position, and orientation independently. Presets
+cover standing, sitting, squatting, kneeling, hands-and-knees, elbows-and-knees,
+prone, supine, and raised arms.
+The joint editor exposes separate neck, shoulder, elbow, wrist, hip, knee, and
+ankle controls on all three axes; markers show their pivots. Right-drag or
+left-drag to orbit, Shift-drag to pan, and use the wheel or the visible zoom
+controls to change camera distance. Resizing a skeleton does not auto-zoom the
+camera. **Fit all bodies** is an explicit framing action. The reach check
+reports the current distance between the selected limb endpoint and a target
+joint center, against the chosen tolerance.
+
+Download the selected body's fitted, posed OBJ and fit JSON from the page. The
+OBJ retains the bone objects and triangles; keep `standard_blue.mtl` beside it
+in an OBJ viewer. The JSON records height, mesh bounds, formula and fitted
+measurements, fit parameters, joint pivots, joint angles, and world transform.
+At either source model's default height, the HTML preview uses the existing OBJ
+vertices directly. Units are **m**; axes are **X right, Y up, Z forward**.
 
 ## Open the ready-made model
 
