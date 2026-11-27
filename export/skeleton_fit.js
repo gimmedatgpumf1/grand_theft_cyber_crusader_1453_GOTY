@@ -3,11 +3,12 @@
 // Skeleton Studio: browser-only WebGL viewer for the real fitted bone meshes.
 const $ = id => document.getElementById(id);
 const { TARGET_NAMES, formulaTargets, parseOBJ, fitVertical, makeBaseFit, transformToFit } = window.SkeletonFitGeometry;
-const JOINT_NAMES = ['neck', 'shoulderL', 'elbowL', 'wristL', 'shoulderR', 'elbowR', 'wristR', 'hipL', 'kneeL', 'ankleL', 'hipR', 'kneeR', 'ankleR'];
+const JOINT_NAMES = ['neck', 'girdleL', 'shoulderL', 'elbowL', 'wristL', 'girdleR', 'shoulderR', 'elbowR', 'wristR', 'hipL', 'kneeL', 'ankleL', 'hipR', 'kneeR', 'ankleR'];
 const MAX_BODIES = 4;
 const JOINT_MARKERS = [
-  ['neck', 'neck', []], ['shoulderL', 'shoulderL', []], ['elbowL', 'elbowL', ['shoulderL']], ['wristL', 'wristL', ['shoulderL', 'elbowL']],
-  ['shoulderR', 'shoulderR', []], ['elbowR', 'elbowR', ['shoulderR']], ['wristR', 'wristR', ['shoulderR', 'elbowR']],
+  ['neck', 'neck', []],
+  ['girdleL', 'girdleL', []], ['shoulderL', 'shoulderL', ['girdleL']], ['elbowL', 'elbowL', ['girdleL', 'shoulderL']], ['wristL', 'wristL', ['girdleL', 'shoulderL', 'elbowL']],
+  ['girdleR', 'girdleR', []], ['shoulderR', 'shoulderR', ['girdleR']], ['elbowR', 'elbowR', ['girdleR', 'shoulderR']], ['wristR', 'wristR', ['girdleR', 'shoulderR', 'elbowR']],
   ['hipL', 'hipL', []], ['kneeL', 'kneeL', ['hipL']], ['ankleL', 'ankleL', ['hipL', 'kneeL']],
   ['hipR', 'hipR', []], ['kneeR', 'kneeR', ['hipR']], ['ankleR', 'ankleR', ['hipR', 'kneeR']]
 ];
@@ -40,16 +41,19 @@ function transformJointChain(point, body, chain) {
   for (const node of nodes) result = rotatePoint(result, node.pivot, node.angles);
   return result;
 }
+function isFootBone(name) {
+  return /^Foot/.test(name) || /^(Tal|Cub|Nav|InterCun|LatCun|MedCun)_/.test(name);
+}
 function boneChain(name) {
   if (['Head', 'Jaw', 'C1'].includes(name) || /^C[2-7]$/.test(name)) return ['neck'];
   const side = name.endsWith('_L') ? 'L' : 'R';
-  if (name.startsWith('Scapula_') || name.startsWith('Clavicula_')) return [`shoulder${side}`];
-  if (name.startsWith('Humerus_')) return [`shoulder${side}`];
-  if (name.startsWith('Radius_')) return [`shoulder${side}`, `elbow${side}`];
-  if (name.startsWith('Hand')) return [`shoulder${side}`, `elbow${side}`, `wrist${side}`];
+  if (name.startsWith('Scapula_') || name.startsWith('Clavicula_')) return [`girdle${side}`];
+  if (name.startsWith('Humerus_')) return [`girdle${side}`, `shoulder${side}`];
+  if (name.startsWith('Radius_')) return [`girdle${side}`, `shoulder${side}`, `elbow${side}`];
+  if (name.startsWith('Hand')) return [`girdle${side}`, `shoulder${side}`, `elbow${side}`, `wrist${side}`];
   if (name.startsWith('Femur_')) return [`hip${side}`];
   if (name.startsWith('Patella_') || name.startsWith('Tibia_')) return [`hip${side}`, `knee${side}`];
-  if (name.startsWith('Foot') || name.startsWith('Tal_')) return [`hip${side}`, `knee${side}`, `ankle${side}`];
+  if (isFootBone(name)) return [`hip${side}`, `knee${side}`, `ankle${side}`];
   return [];
 }
 
@@ -118,10 +122,12 @@ function buildPivots(body) {
     const humerus = bone(`Humerus_${side}`), radius = bone(`Radius_${side}`);
     const pelvis = bone(`Pelvis_${side}`), femur = bone(`Femur_${side}`);
     const tibia = bone(`Tibia_${side}`), talus = bone(`Tal_${side}`);
+    const clavicle = bone(`Clavicula_${side}`), scapula = bone(`Scapula_${side}`);
     const hand = handVertices(side);
-    if (![humerus, radius, pelvis, femur, tibia, talus].every(Boolean) || !hand.length) throw new Error(`Missing source bones needed to rig side ${side}.`);
+    if (![humerus, radius, pelvis, femur, tibia, talus, clavicle, scapula, bone('Sternum')].every(Boolean) || !hand.length) throw new Error(`Missing source bones needed to rig side ${side}.`);
     return {
-      [`shoulder${side}`]: closestSurfaceMidpoint(bone(`Scapula_${side}`).vertices, humerus.vertices),
+      [`girdle${side}`]: closestSurfaceMidpoint(bone('Sternum').vertices, clavicle.vertices),
+      [`shoulder${side}`]: closestSurfaceMidpoint(scapula.vertices, humerus.vertices),
       [`elbow${side}`]: closestSurfaceMidpoint(humerus.vertices, radius.vertices),
       [`wrist${side}`]: closestSurfaceMidpoint(radius.vertices, hand),
       [`hip${side}`]: closestSurfaceMidpoint(pelvis.vertices, femur.vertices),
@@ -608,7 +614,7 @@ function transformLocalToWorld(body, p) {
 }
 function boneCenter(body, predicate) { return mergedBounds(body.meshes, predicate).center; }
 function footTip(body, side) {
-  const box = mergedBounds(body.meshes, name => name.startsWith('Foot') && name.endsWith(`_${side}`));
+  const box = mergedBounds(body.meshes, name => isFootBone(name) && name.endsWith(`_${side}`));
   return [box.center[0], box.center[1], box.max[2]];
 }
 function distance3(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
@@ -620,10 +626,10 @@ function targetLocalPoint(body, target) {
     case 'neck': return pivot('neck');
     case 'chest': return boneCenter(body, name => /^T\d+$|^Rib|^Sternum$/.test(name));
     case 'pelvis': return boneCenter(body, name => /^Pelvis_|^Sacrum$/.test(name));
-    case 'shoulderL': return pivot('shoulderL'); case 'shoulderR': return pivot('shoulderR');
-    case 'elbowL': return joint('elbowL', ['shoulderL']); case 'elbowR': return joint('elbowR', ['shoulderR']);
-    case 'handL': return transformJointChain(body.partBounds.get('HandDistP3_L').center, body, ['shoulderL', 'elbowL', 'wristL']);
-    case 'handR': return transformJointChain(body.partBounds.get('HandDistP3_R').center, body, ['shoulderR', 'elbowR', 'wristR']);
+    case 'shoulderL': return joint('shoulderL', ['girdleL']); case 'shoulderR': return joint('shoulderR', ['girdleR']);
+    case 'elbowL': return joint('elbowL', ['girdleL', 'shoulderL']); case 'elbowR': return joint('elbowR', ['girdleR', 'shoulderR']);
+    case 'handL': return transformJointChain(body.partBounds.get('HandDistP3_L').center, body, ['girdleL', 'shoulderL', 'elbowL', 'wristL']);
+    case 'handR': return transformJointChain(body.partBounds.get('HandDistP3_R').center, body, ['girdleR', 'shoulderR', 'elbowR', 'wristR']);
     case 'hipL': return pivot('hipL'); case 'hipR': return pivot('hipR');
     case 'kneeL': return joint('kneeL', ['hipL']); case 'kneeR': return joint('kneeR', ['hipR']);
     case 'footL': return transformJointChain(footTip(body, 'L'), body, ['hipL', 'kneeL', 'ankleL']);
@@ -635,16 +641,13 @@ function limbReach(body, limb) {
   const side = limb.endsWith('L') ? 'L' : 'R';
   const isArm = limb.startsWith('hand');
   if (isArm) {
-    const shoulder = body.pivots[`shoulder${side}`];
-    const elbow = body.pivots[`elbow${side}`];
-    const wrist = body.pivots[`wrist${side}`];
+    const girdle = `girdle${side}`, shoulderId = `shoulder${side}`, elbowId = `elbow${side}`, wristId = `wrist${side}`;
+    const shoulder = transformJointChain(body.pivots[shoulderId], body, [girdle]);
+    const elbow = transformJointChain(body.pivots[elbowId], body, [girdle, shoulderId]);
+    const wrist = transformJointChain(body.pivots[wristId], body, [girdle, shoulderId, elbowId]);
     const tip = body.partBounds.get(`HandDistP3_${side}`).center;
-    const chain = [`shoulder${side}`, `elbow${side}`, `wrist${side}`];
-    return {
-      base: shoulder,
-      endpoint: transformJointChain(tip, body, chain),
-      maximum: distance3(shoulder, elbow) + distance3(elbow, wrist) + distance3(wrist, tip)
-    };
+    const endpoint = transformJointChain(tip, body, [girdle, shoulderId, elbowId, wristId]);
+    return { base: shoulder, endpoint, maximum: distance3(shoulder, elbow) + distance3(elbow, wrist) + distance3(wrist, endpoint) };
   }
   const hip = body.pivots[`hip${side}`];
   const knee = body.pivots[`knee${side}`];

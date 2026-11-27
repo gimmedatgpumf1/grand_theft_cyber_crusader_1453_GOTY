@@ -17,8 +17,11 @@ body's height, sex, world position, and orientation independently. Presets
 cover standing, sitting, squatting, kneeling, hands-and-knees, elbows-and-knees,
 prone, supine, and raised arms.
 The joint editor exposes separate neck, shoulder, elbow, wrist, hip, knee, and
-ankle controls on all three axes. Joint markers are optional (off initially)
-and appear only on the selected body. Right-drag or left-drag to orbit,
+ankle controls on all three axes. Separate collarbone/girdle controls move the
+clavicle and scapula with the arm; shoulder rotation is centered at the
+scapula–humerus seam. The complete foot group—including cuboid, navicular,
+and cuneiform meshes—follows the ankle chain. Joint markers are optional (off
+initially) and appear only on the selected body. Right-drag or left-drag to orbit,
 Shift-drag to pan, and use the wheel or the visible zoom
 controls to change camera distance. Resizing a skeleton does not auto-zoom the
 camera. **Fit all bodies** is an explicit framing action. The reach check
