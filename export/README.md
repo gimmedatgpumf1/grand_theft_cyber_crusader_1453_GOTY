@@ -17,12 +17,13 @@ body's height, sex, world position, and orientation independently. Presets
 cover standing, sitting, squatting, kneeling, hands-and-knees, elbows-and-knees,
 prone, supine, and raised arms.
 The joint editor exposes separate neck, shoulder, elbow, wrist, hip, knee, and
-ankle controls on all three axes; markers show their pivots. Right-drag or
-left-drag to orbit, Shift-drag to pan, and use the wheel or the visible zoom
+ankle controls on all three axes. Joint markers are optional (off initially)
+and appear only on the selected body. Right-drag or left-drag to orbit,
+Shift-drag to pan, and use the wheel or the visible zoom
 controls to change camera distance. Resizing a skeleton does not auto-zoom the
 camera. **Fit all bodies** is an explicit framing action. The reach check
-reports the current distance between the selected limb endpoint and a target
-joint center, against the chosen tolerance.
+compares the target surface gap from the shoulder/hip against measured full
+limb length and separately reports whether the current endpoint is in contact.
 
 Download the selected body's fitted, posed OBJ and fit JSON from the page. The
 OBJ retains the bone objects and triangles; keep `standard_blue.mtl` beside it

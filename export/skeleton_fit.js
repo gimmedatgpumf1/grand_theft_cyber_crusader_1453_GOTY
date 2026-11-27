@@ -2,7 +2,7 @@
 
 // Skeleton Studio: browser-only WebGL viewer for the real fitted bone meshes.
 const $ = id => document.getElementById(id);
-const { TARGET_NAMES, formulaTargets, parseOBJ, fitVertical, mapPoint, makeBaseFit, transformToFit } = window.SkeletonFitGeometry;
+const { TARGET_NAMES, formulaTargets, parseOBJ, fitVertical, makeBaseFit, transformToFit } = window.SkeletonFitGeometry;
 const JOINT_NAMES = ['neck', 'shoulderL', 'elbowL', 'wristL', 'shoulderR', 'elbowR', 'wristR', 'hipL', 'kneeL', 'ankleL', 'hipR', 'kneeR', 'ankleR'];
 const MAX_BODIES = 4;
 const JOINT_MARKERS = [
@@ -84,37 +84,53 @@ function mergedBounds(meshes, predicate) {
   return { min, max, center: min.map((v, i) => (v + max[i]) * .5) };
 }
 function createJointState() { return Object.fromEntries(JOINT_NAMES.map(name => [name, [0, 0, 0]])); }
+function closestSurfaceMidpoint(verticesA, verticesB) {
+  const cellSize = .035;
+  const key = (x, y, z) => `${x},${y},${z}`;
+  const buckets = new Map();
+  for (const p of verticesB) {
+    const k = key(Math.floor(p[0] / cellSize), Math.floor(p[1] / cellSize), Math.floor(p[2] / cellSize));
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(p);
+  }
+  let bestDistance = Infinity, bestA = verticesA[0], bestB = verticesB[0];
+  for (const p of verticesA) {
+    const cx = Math.floor(p[0] / cellSize), cy = Math.floor(p[1] / cellSize), cz = Math.floor(p[2] / cellSize);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const candidates = buckets.get(key(cx + dx, cy + dy, cz + dz));
+      if (!candidates) continue;
+      for (const q of candidates) {
+        const x = p[0] - q[0], y = p[1] - q[1], z = p[2] - q[2], d = x * x + y * y + z * z;
+        if (d < bestDistance) { bestDistance = d; bestA = p; bestB = q; }
+      }
+    }
+  }
+  if (!Number.isFinite(bestDistance)) throw new Error('Could not locate a connected joint seam in the source meshes.');
+  return bestA.map((value, i) => (value + bestB[i]) * .5);
+}
 function buildPivots(body) {
-  const fit = body.fit, meta = body.meta, meshes = body.meshes;
+  const meshes = body.meshes;
   const byName = new Map(meshes.map(obj => [obj.name, obj]));
   const partBounds = new Map(meshes.map(obj => [obj.name, bounds(obj.vertices)]));
-  const boundsOf = name => partBounds.get(name) || { min: [0, 0, 0], max: [0, 0, 0], center: [0, 0, 0] };
-  const femurL = boundsOf('Femur_L'), femurR = boundsOf('Femur_R');
-  const tibiaL = boundsOf('Tibia_L'), tibiaR = boundsOf('Tibia_R');
-  const footL = mergedBounds(meshes, name => /^(Foot|Tal)_.*_L$/.test(name));
-  const footR = mergedBounds(meshes, name => /^(Foot|Tal)_.*_R$/.test(name));
-  const radiusL = boundsOf('Radius_L'), radiusR = boundsOf('Radius_R');
-  const arm = meta.arm_points_m;
-  const sidePivot = side => {
-    const suffix = side === 'L' ? 'left' : 'right';
-    const shoulder = mapPoint(arm[`${suffix}_shoulder`], 'girdle', side === 'L' ? 1 : -1, false, fit);
-    const elbow = mapPoint(arm[`${suffix}_elbow`], 'arm', side === 'L' ? 1 : -1, false, fit);
-    const radius = side === 'L' ? radiusL : radiusR;
-    const femur = side === 'L' ? femurL : femurR;
-    const tibia = side === 'L' ? tibiaL : tibiaR;
-    const foot = side === 'L' ? footL : footR;
-    const sideSign = side === 'L' ? 1 : -1;
-    const wrist = [sideSign > 0 ? radius.max[0] : radius.min[0], radius.center[1], radius.center[2]];
-    const hip = [femur.center[0], fit.mapY(fit.hipSourceY), femur.center[2]];
-    const knee = [(femur.center[0] + tibia.center[0]) * .5, (femur.min[1] + tibia.max[1]) * .5, (femur.center[2] + tibia.center[2]) * .5];
-    const ankle = [(tibia.center[0] + foot.center[0]) * .5, (tibia.min[1] + foot.max[1]) * .5, (tibia.center[2] + foot.center[2]) * .5];
-    return { [`shoulder${side}`]: shoulder, [`elbow${side}`]: elbow, [`wrist${side}`]: wrist, [`hip${side}`]: hip, [`knee${side}`]: knee, [`ankle${side}`]: ankle };
+  const bone = name => byName.get(name);
+  const handVertices = side => meshes.filter(obj => obj.name.startsWith('Hand') && obj.name.endsWith(`_${side}`)).flatMap(obj => obj.vertices);
+  const sidePivots = side => {
+    const humerus = bone(`Humerus_${side}`), radius = bone(`Radius_${side}`);
+    const pelvis = bone(`Pelvis_${side}`), femur = bone(`Femur_${side}`);
+    const tibia = bone(`Tibia_${side}`), talus = bone(`Tal_${side}`);
+    const hand = handVertices(side);
+    if (![humerus, radius, pelvis, femur, tibia, talus].every(Boolean) || !hand.length) throw new Error(`Missing source bones needed to rig side ${side}.`);
+    return {
+      [`shoulder${side}`]: closestSurfaceMidpoint(bone(`Scapula_${side}`).vertices, humerus.vertices),
+      [`elbow${side}`]: closestSurfaceMidpoint(humerus.vertices, radius.vertices),
+      [`wrist${side}`]: closestSurfaceMidpoint(radius.vertices, hand),
+      [`hip${side}`]: closestSurfaceMidpoint(pelvis.vertices, femur.vertices),
+      [`knee${side}`]: closestSurfaceMidpoint(femur.vertices, tibia.vertices),
+      [`ankle${side}`]: closestSurfaceMidpoint(tibia.vertices, talus.vertices)
+    };
   };
   body.partBounds = partBounds;
-  body.pivots = {
-    neck: [0, fit.c7, meta.source_landmarks_m.neck_contact_z * fit.heightScale],
-    ...sidePivot('L'), ...sidePivot('R')
-  };
+  body.pivots = { neck: closestSurfaceMidpoint(bone('C7').vertices, bone('T1').vertices), ...sidePivots('L'), ...sidePivots('R') };
   body.meshBounds = mergedBounds(meshes, () => true);
   body.namedObjects = byName;
 }
@@ -126,7 +142,7 @@ function createFitBody(sex, height) {
   const body = {
     id: idCounter++, sex, height, meta: source.meta, sourceMesh: source.mesh,
     fit, meshes, joints: createJointState(), worldX: 0, worldY: 0, worldZ: 0, yaw: 0, tilt: 0,
-    buffers: null, markerBuffer: null, drawCount: 0, markerCount: 0, partBounds: null, pivots: null, meshBounds: null
+    buffers: null, markerBuffers: null, drawCount: 0, markerCount: 0, partBounds: null, pivots: null, meshBounds: null
   };
   buildPivots(body);
   updateGroundHeight(body);
@@ -188,7 +204,7 @@ function jointMarkerPoints(body) {
     const selected = label === $('jointSelect').value;
     positions.set(p, n);
     normals.set([0, 1, 0], n);
-    colors.set(selected ? [0.88, 0.48, 0.08] : [0.15, 0.45, 0.74], n);
+    colors.set(selected ? [0.88, 0.48, 0.08] : [0.45, 0.53, 0.59], n);
     n += 3;
   }
   return { positions, normals, colors, count: entries.length };
@@ -346,7 +362,7 @@ function draw() {
     gl.uniform1f(uniform.roundPoints, 0);
     bindAttributes(body.buffers.position, body.buffers.normal, body.buffers.color);
     gl.drawArrays(gl.TRIANGLES, 0, body.drawCount);
-    if ($('showJoints').checked && body.markerCount) {
+    if (body.id === selectedId && $('showJoints').checked && body.markerCount) {
       gl.uniform1f(uniform.roundPoints, 1);
       bindAttributes(body.markerBuffers.position, body.markerBuffers.normal, body.markerBuffers.color);
       gl.drawArrays(gl.POINTS, 0, body.markerCount);
@@ -370,6 +386,7 @@ function projectWorldPoint(point, rect) {
   return [rect.left + (clipX / clipW + 1) * .5 * rect.width, rect.top + (1 - clipY / clipW) * .5 * rect.height];
 }
 function selectMarkerAt(clientX, clientY) {
+  if (!$('showJoints').checked) return false;
   const rect = canvas.getBoundingClientRect();
   let nearest = null;
   for (const body of bodies) for (const [label, pivotId, chain] of JOINT_MARKERS) {
@@ -590,6 +607,11 @@ function transformLocalToWorld(body, p) {
   return [q[0] + body.worldX, q[1] + body.worldY, q[2] + body.worldZ];
 }
 function boneCenter(body, predicate) { return mergedBounds(body.meshes, predicate).center; }
+function footTip(body, side) {
+  const box = mergedBounds(body.meshes, name => name.startsWith('Foot') && name.endsWith(`_${side}`));
+  return [box.center[0], box.center[1], box.max[2]];
+}
+function distance3(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
 function targetLocalPoint(body, target) {
   const pivot = id => body.pivots[id];
   const joint = (name, chain = []) => transformJointChain(pivot(name), body, chain);
@@ -600,27 +622,72 @@ function targetLocalPoint(body, target) {
     case 'pelvis': return boneCenter(body, name => /^Pelvis_|^Sacrum$/.test(name));
     case 'shoulderL': return pivot('shoulderL'); case 'shoulderR': return pivot('shoulderR');
     case 'elbowL': return joint('elbowL', ['shoulderL']); case 'elbowR': return joint('elbowR', ['shoulderR']);
-    case 'handL': return transformJointChain(boneCenter(body, name => name.startsWith('Hand') && name.endsWith('_L')), body, ['shoulderL', 'elbowL', 'wristL']);
-    case 'handR': return transformJointChain(boneCenter(body, name => name.startsWith('Hand') && name.endsWith('_R')), body, ['shoulderR', 'elbowR', 'wristR']);
+    case 'handL': return transformJointChain(body.partBounds.get('HandDistP3_L').center, body, ['shoulderL', 'elbowL', 'wristL']);
+    case 'handR': return transformJointChain(body.partBounds.get('HandDistP3_R').center, body, ['shoulderR', 'elbowR', 'wristR']);
     case 'hipL': return pivot('hipL'); case 'hipR': return pivot('hipR');
     case 'kneeL': return joint('kneeL', ['hipL']); case 'kneeR': return joint('kneeR', ['hipR']);
-    case 'footL': return transformJointChain(boneCenter(body, name => /^(Foot|Tal)_.*_L$/.test(name)), body, ['hipL', 'kneeL', 'ankleL']);
-    case 'footR': return transformJointChain(boneCenter(body, name => /^(Foot|Tal)_.*_R$/.test(name)), body, ['hipR', 'kneeR', 'ankleR']);
+    case 'footL': return transformJointChain(footTip(body, 'L'), body, ['hipL', 'kneeL', 'ankleL']);
+    case 'footR': return transformJointChain(footTip(body, 'R'), body, ['hipR', 'kneeR', 'ankleR']);
     default: return [0, 0, 0];
   }
+}
+function limbReach(body, limb) {
+  const side = limb.endsWith('L') ? 'L' : 'R';
+  const isArm = limb.startsWith('hand');
+  if (isArm) {
+    const shoulder = body.pivots[`shoulder${side}`];
+    const elbow = body.pivots[`elbow${side}`];
+    const wrist = body.pivots[`wrist${side}`];
+    const tip = body.partBounds.get(`HandDistP3_${side}`).center;
+    const chain = [`shoulder${side}`, `elbow${side}`, `wrist${side}`];
+    return {
+      base: shoulder,
+      endpoint: transformJointChain(tip, body, chain),
+      maximum: distance3(shoulder, elbow) + distance3(elbow, wrist) + distance3(wrist, tip)
+    };
+  }
+  const hip = body.pivots[`hip${side}`];
+  const knee = body.pivots[`knee${side}`];
+  const ankle = body.pivots[`ankle${side}`];
+  const tip = footTip(body, side);
+  const chain = [`hip${side}`, `knee${side}`, `ankle${side}`];
+  return {
+    base: hip,
+    endpoint: transformJointChain(tip, body, chain),
+    maximum: distance3(hip, knee) + distance3(knee, ankle) + distance3(ankle, tip)
+  };
+}
+function targetRadius(target) {
+  if (target === 'head') return .105;
+  if (target === 'chest') return .17;
+  if (target === 'pelvis') return .13;
+  if (target.startsWith('hand')) return .045;
+  if (target.startsWith('foot')) return .065;
+  if (target.startsWith('shoulder') || target.startsWith('hip')) return .065;
+  if (target.startsWith('elbow') || target.startsWith('knee') || target === 'neck') return .045;
+  return .05;
 }
 function checkReach() {
   const source = selectedBody();
   const target = bodies.find(body => String(body.id) === $('reachTargetBody').value);
   if (!source || !target) { $('reachResult').textContent = 'Spawn a body first.'; return; }
-  const limb = $('reachLimb').value;
-  const point = transformLocalToWorld(source, targetLocalPoint(source, limb));
-  const targetPoint = transformLocalToWorld(target, targetLocalPoint(target, $('reachTarget').value));
-  const distance = Math.hypot(point[0] - targetPoint[0], point[1] - targetPoint[1], point[2] - targetPoint[2]);
+  const limbName = $('reachLimb').value;
+  const targetName = $('reachTarget').value;
+  const limb = limbReach(source, limbName);
+  const base = transformLocalToWorld(source, limb.base);
+  const endpoint = transformLocalToWorld(source, limb.endpoint);
+  const targetPoint = transformLocalToWorld(target, targetLocalPoint(target, targetName));
+  const centerDistance = distance3(base, targetPoint);
+  const surfaceGap = Math.max(0, centerDistance - targetRadius(targetName));
+  const endpointGap = Math.max(0, distance3(endpoint, targetPoint) - targetRadius(targetName));
   const tolerance = Number($('reachTolerance').value);
+  const reachable = surfaceGap <= limb.maximum + tolerance;
+  const inContact = endpointGap <= tolerance;
   const result = $('reachResult');
-  result.className = `status ${distance <= tolerance ? 'good' : ''}`;
-  result.innerHTML = `<strong>${distance <= tolerance ? 'Within contact tolerance' : 'Not within contact tolerance'}</strong><br>Joint-center distance: ${distance.toFixed(3)} m · tolerance: ${tolerance.toFixed(2)} m`;
+  result.className = `status ${reachable ? 'good' : 'error'}`;
+  result.innerHTML = `<strong>${reachable ? 'Reachable from this limb' : 'Beyond this limb’s reach'}</strong><br>` +
+    `Target surface gap: ${surfaceGap.toFixed(3)} m · available reach: ${limb.maximum.toFixed(3)} m<br>` +
+    `Current endpoint gap: ${endpointGap.toFixed(3)} m · contact tolerance: ${tolerance.toFixed(2)} m · ${inContact ? 'in contact' : 'not in contact'}`;
 }
 
 function serializeOBJ(meshes, body) {
