@@ -1,5 +1,17 @@
 # Blue bones. Fit the body.
 
+## Try the modular body
+
+Open `modular_body.html` in a browser. Pick male/female. Move the height
+slider. Drag the model to turn it. The body is separate blocks: head, neck,
+torso, pelvis, shoulders, upper arms, forearms, hands, thighs, shins, and feet.
+Each block changes from the formula targets. No extra libraries needed.
+
+Click the three buttons to save OBJ, MTL, and JSON. Keep OBJ and MTL together.
+The JSON gives each block's bounds and joint points. This block model is
+simple on purpose. Block widths/depths and limb split ratios are display
+choices; the seven body targets come from the formulas below.
+
 ## Open the ready-made model
 
 Pick one OBJ:
